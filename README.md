@@ -14,6 +14,11 @@ Composite Emoji のゲームクライアント。
 実機 iPhone Safari / iframe での検証は完了しており、**この構成を本実装へ採用する（Go）**という結論。
 検証結果と持ち越した課題は [docs/mobile-safari-poc.md](docs/mobile-safari-poc.md) にある。
 
+ここから Generation I 準拠の Battle Engine を `internal/battle` に実装していく。
+現在あるのは domain model と seeded RNG までで、ダメージ計算などの mechanics はこれから追加する。
+対戦仕様の正は Linear の Project Document「Battle Rules Specification」。
+active / reserve や multi-turn state といった用語も、同 Document の Glossary の意味で使う。
+
 ## 必要環境
 
 - Go 1.25 以上
@@ -123,6 +128,7 @@ internal/game/spritescene.go PoC の画面構成、キャラクター定義、�
 internal/game/input.go      マウス / タッチの取得
 internal/sprite/            複数 Emoji を 1 体として定義・描画する Composite Sprite 層
 internal/anim/              アニメーションの状態管理と Emoji particle
+internal/battle/            Battle Engine の domain model と seeded RNG（UI 非依存）
 docs/mobile-safari-poc.md   iPhone Safari / iframe 検証の手順と記録（YTA-10）
 docs/wasm-delivery.md       本番配信時の圧縮手順と実測サイズ（YTA-12）
 docs/loading-experience.md  初回ロード中の表示と、回線別のロード時間（YTA-13）
@@ -147,6 +153,11 @@ platform 固有の処理（ウィンドウ設定・HTTP 配信・ブラウザ bo
 `internal/sprite` はキャラクターの**定義**（どの Emoji をどこに置くか）と**描画**を分けている。
 定義と座標計算は Ebitengine に依存せず、描画だけが `Renderer` に閉じている。
 キャラクターごとの分岐は描画側に持たせないため、新しいキャラクターの追加は定義を増やすだけで済む。
+
+`internal/battle` は対戦そのものを表す層で、UI からも Ebitengine からも独立している。
+状態（`BattleState`）・行動（`Action`）・結果（`Event`）だけを持ち、描画や入力を知らない。
+乱数は `RNG` として外から渡すため、同じ初期状態・同じ行動列・同じ seed からいつでも同じ結果を再現できる。
+キャラクターや技は識別子（`SpeciesID` / `MoveID`）で参照するだけで、domain 側にキャラクター固有の分岐を持たせない。
 
 `internal/anim` はアニメーションの**状態**だけを持ち、キャラクター定義も base transform も持たない。
 描画に使う transform は毎回 base から計算し直すため、再生を繰り返してもずれが蓄積しない。
@@ -187,6 +198,12 @@ Linear に明示されていない箇所について、以下を採用した。�
 | 配信時のキャッシュ | `Cache-Control: no-store` | 再ビルドした `.wasm` が古いキャッシュのまま検証される事故を防ぐ |
 | 本番配信の圧縮 | `make dist` で事前圧縮した `.br` / `.gz` を生成し、配信側は `Content-Encoding` を付けて返す | brotli -q11 で 21.4 MB → 3.8 MB。21 MB の `.wasm` は CDN の自動圧縮のサイズ上限を超えやすく、事前圧縮のほうが確実。圧縮は配信の設定なのでゲーム側のコードは変えない |
 | `-ldflags="-s -w"` | 使わない | 圧縮後で 0.06 MB しか減らない一方、panic 時のシンボルを失う |
+| Battle Engine の位置 | `internal/battle`。Ebitengine を import しない | 仕様書が求める UI 非依存の pure domain。import していないことを test で検査しており、うっかり依存が入れば落ちる |
+| チームの表現 | `[3]Pokemon` の固定長配列 + 場に出ている index | 本作は 3 体固定なので型で表せる。交代しても index が変わらないため、Event から常に同じ index で指せる |
+| `Action` / `Event` | 非公開メソッドを持つ interface で閉じる | package の外から別の行動や Event を足せない。resolver は type switch で漏れなく扱える。Gen I の技データを `Move` と名付ける余地を残すため、行動側は `MoveAction` / `SwitchAction` とした |
+| 乱数 | splitmix64 を自前実装し、`RNG` interface で注入する | 生成列をこのリポジトリのコードだけで固定する。標準ライブラリの版差で golden test が壊れるのを避ける。global state に依存しないので、同じ seed から必ず同じ対戦を再現できる |
+| 乱数を状態に含めるか | 含めない。`BattleState` は値として複製できる pure な状態のままにする | 状態を複製しても乱数列が分岐しない。seed の管理は resolver 側の責務になる |
+| キャラクター・技の参照 | `SpeciesID` / `MoveID` という識別子だけを持つ | 実データの定義は後続 Issue の範囲。domain 側がキャラクター名で分岐しない構造を最初から守る |
 | ロード中の表示 | テキストのみ。受信量と、10 秒を超えたときの注意書き | ローディング画面のアートワークは Out of scope。HTML 側で Emoji を出すと OS のフォントで描かれ、起動後の Twemoji と絵柄が変わる。揃えるには 1.4 MB のフォントを別に読ませることになり、待ち時間を減らす目的と逆を向く |
 | 受信量の取り方 | `fetch` した body を自前で数え、同じ内容を `instantiateStreaming` へ渡す | `instantiateStreaming` は受信量を教えてくれない。streaming のまま渡すので起動は遅くならない。圧縮配信では解凍後のバイト数になる（転送量は起動後に Resource Timing から出す） |
 | ロード失敗時 | 理由と再読み込みボタンを出す。自動リトライもタイムアウトによる中断もしない | 実機では console を見られないことがある。iframe 内ではブラウザの再読み込みが埋め込みページ全体に及ぶため、枠の中だけやり直せるようにする。遅いだけの回線を打ち切ると、あと少しで終わる読み込みを捨てることになる |
@@ -221,6 +238,10 @@ pixel の読み出し（`Image.At`）ができないため、描画結果その�
 
 Emoji についても色そのものは検証できないため、必須 Emoji が同梱フォントの
 単一カラーグリフへ解決されるところまでを自動テストで確認し、実際の色は目視確認で担保している。
+
+`internal/battle` は Ebitengine に依存しないため、描画 context なしで全部テストできる。
+状態の検証（取り得ない値を弾くか）、seeded RNG の再現性、`Action` / `Event` モデルの妥当性に加えて、
+**この package が Ebitengine を import していないこと自体**も test で確かめている。
 
 Composite Sprite の合成計算（`sprite.Part.Place`）は Ebitengine に依存しない純粋関数なので、
 描画コンテキストなしで検証している。全体の移動・拡大・回転で部品どうしの位置関係が保たれることは

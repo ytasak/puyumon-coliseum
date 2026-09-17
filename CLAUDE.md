@@ -174,7 +174,12 @@ Issue のステータス変更は Product Owner の確認を経る。Claude Code
 
 ## 10. Git discipline
 
-- **原則 1 Issue = 1 branch。** Linear が生成する branch name を利用してよい
+- **原則 1 Issue = 1 branch。**
+- **branch name は英語で付ける。** Linear の Issue title が日本語でも、適切な英語へ翻訳して slug 化する。
+  形式は `<handle>/<issue-id>-<english-slug>`（例: `vividnasubi/yta-5-set-up-ebitengine-project`）。
+  Linear が生成する branch name は日本語を含むためそのまま使わない。
+  branch name に Issue ID を含めておけば Linear が PR を自動リンクする。
+  Issue に紐づかない作業は `chore/<english-slug>` のように英語で付ける
 - **branch を切るときは `git worktree` を使う。** 作業中のブランチを切り替えず、未コミットの変更を
   他の作業へ持ち込まないため。worktree はリポジトリ外の sibling directory に作る（リポジトリ内に置く場合は
   `.gitignore` へ追加する）。作業が終わったら `git worktree remove` で片付ける

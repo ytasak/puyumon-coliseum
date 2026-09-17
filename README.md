@@ -8,8 +8,8 @@ Client は Go + [Ebitengine](https://ebitengine.org/) で実装し、最終的�
 開発の進め方は Project Document「AI Development Protocol」に従う。
 
 現在のリポジトリ状態は Milestone「Ebitengine / WASM Emoji PoC」の
-[YTA-8](https://linear.app/ytask/issue/YTA-8) までを実装した、Desktop と WebAssembly の両方で
-起動し、複数の Emoji を組み合わせた 1 体のキャラクターを描画するゲームクライアント。
+[YTA-9](https://linear.app/ytask/issue/YTA-9) までを実装した、Desktop と WebAssembly の両方で
+起動し、複数の Emoji を組み合わせたキャラクターがアニメーションするゲームクライアント。
 
 ## 必要環境
 
@@ -28,11 +28,12 @@ make run          # go run ./cmd/game と同じ
 論理解像度 640x360 を 2 倍したウィンドウ（1280x720）が開く。画面には次が表示される。
 
 - 左上: PoC 識別用テキストと tick カウンタ。増え続けていればゲームループが動作している
-- 上段: 定義の異なる 2 体のキャラクター。ナッシー型（`🌴` + `🥺 😫 🤪`）とクジラ型（`🐋` + `😫 ⭐`）
-- 下段: 同じナッシー型の定義を 0.6x / 15 度回転 / 1.2x で並べたもの
+- 中央: 4 体のキャラクターが `idle` / `attack` / `hit` / `emphasis` を繰り返す。
+  ナッシー型（`🌴` + `🥺 😫 🤪`）とクジラ型（`🐋` + `😫 ⭐`）へ別々の動きを割り当てている
+- 各キャラクターの頭上: `💤` `⚡` `💥` `❄️` の particle が出て、上がりながら消える
 
-Emoji が単色や豆腐ではなくカラーで表示され、下段のどれもキャラクターとしての
-形を保っていれば（部品だけがずれたり大きさが崩れたりしていなければ）成立している。
+どのキャラクターも動き終わったあとに元の位置・大きさへ戻り、繰り返しても
+少しずつずれていかなければ成立している。
 
 ウィンドウを閉じるとアプリケーションが終了する。
 
@@ -88,8 +89,9 @@ cmd/game/main.go            エントリポイント。ウィンドウ設定と�
 cmd/serve/main.go           WASM 動作確認用のローカル静的ファイルサーバ
 internal/game/game.go       Game 型（ebiten.Game の Update / Draw）と描画
 internal/game/layout.go     論理解像度の定数と Layout
-internal/game/spritescene.go Composite Sprite PoC の画面構成とキャラクター定義
+internal/game/spritescene.go PoC の画面構成、キャラクター定義、デモの進行
 internal/sprite/            複数 Emoji を 1 体として定義・描画する Composite Sprite 層
+internal/anim/              アニメーションの状態管理と Emoji particle
 internal/emoji/             Emoji 素材のフォント読み込みとセル画像のキャッシュ
 internal/emoji/assets/      同梱フォントと、その出典・ライセンス
 docs/emoji-rendering.md     カラー Emoji 描画の検証記録（YTA-7）
@@ -111,6 +113,10 @@ platform 固有の処理（ウィンドウ設定・HTTP 配信・ブラウザ bo
 定義と座標計算は Ebitengine に依存せず、描画だけが `Renderer` に閉じている。
 キャラクターごとの分岐は描画側に持たせないため、新しいキャラクターの追加は定義を増やすだけで済む。
 
+`internal/anim` はアニメーションの**状態**だけを持ち、キャラクター定義も base transform も持たない。
+描画に使う transform は毎回 base から計算し直すため、再生を繰り返してもずれが蓄積しない。
+Ebitengine に依存しないので、動きの検証は描画コンテキストなしで行える。
+
 ## 技術的な判断
 
 Linear に明示されていない箇所について、以下を採用した。変更が必要になった場合は Linear 側の仕様を先に更新する。
@@ -130,6 +136,11 @@ Linear に明示されていない箇所について、以下を採用した。�
 | 描画順 | `NewCharacter` が `Z` の昇順へ 1 度だけ並べ替え、`Draw` はその順に描く | 描画のたびにソートしない。同じ `Z` は定義順を保つので、定義側で順序を明示できる |
 | Composite のキャッシュ | 実装しない。`Draw` が `dst` を引数に取るので offscreen へ描いて使い回せる構造にとどめる | PoC のキャラクターは数部品しかなく、キャッシュしても得られるものが少ない。必要になった時点で呼び出し側が offscreen を用意すればよい |
 | 2 体目のキャラクター（クジラ型） | 定義だけ追加し、描画コードは増やさない | 「新キャラクター追加に専用 draw function を必要としない」ことを画面とテストの両方で確認するため。デザインとしては未確定 |
+| アニメーションの時間単位 | Ebitengine の tick（60 TPS）。長さも tick で持つ | フレーム数にも実時間にも依存せず、テストから同じ単位で進められる。`Update` を呼んだ回数がそのまま時間になる |
+| ずれ（drift）の防ぎ方 | 状態を足し込まず、毎 tick base transform から計算し直す | 「アニメーション後に必ず base へ戻る」を設計で保証する。戻し忘れが起きる余地を作らない |
+| 複数アニメーションの競合 | 単発アニメーションの同時再生を禁止し、再生中の要求は順番待ちへ積む | Issue が PoC で許容している方式。どの動きが出ているかが常に 1 つに定まる。中断は行わない |
+| 動きの大きさの単位 | character-local 座標（`1.0` = Emoji セル 1 個分）で持ち、`Transform.Scale` を掛ける | キャラクターを拡大縮小しても動きの見た目の比率が変わらない |
+| particle の消え方 | 終盤で縮めて消す。アルファは使わない | `Renderer` に色・透明度の引数を増やさずに済む。PoC で必要な「一定時間後に消滅」は満たせる |
 | `wasm_exec.js` | `make wasm` が GOROOT からコピーし、commit しない | Go の同梱物なのでツールチェーンとバージョンを一致させる。生成物を commit しない方針とも揃う |
 | ローカル配信サーバ | 標準ライブラリだけの Go 実装（`cmd/serve`） | `.wasm` の Content-Type が `application/wasm` でないと `instantiateStreaming` が失敗する。Go の `mime` なら確実で、外部ツールへの依存も増えない |
 | 配信時のキャッシュ | `Cache-Control: no-store` | 再ビルドした `.wasm` が古いキャッシュのまま検証される事故を防ぐ |
@@ -164,6 +175,11 @@ Composite Sprite の合成計算（`sprite.Part.Place`）は Ebitengine に依�
 描画コンテキストなしで検証している。全体の移動・拡大・回転で部品どうしの位置関係が保たれることは
 ここでテストしており、目視確認に頼っていない。
 
+`internal/anim` も同様に Ebitengine へ依存しないため、アニメーション後に base へ戻ること、
+順番待ちが要求順に再生されること、particle が生成から消滅まで正しく扱われることを
+すべてテストで確認している。毎 tick 呼ばれる `Particles.Update` が確保を行わないことも
+`testing.AllocsPerRun` で検証している。
+
 ## クレジット
 
 本リポジトリは次のアセットを同梱している。配布時もこの表示を成果物側に残すこと。
@@ -174,5 +190,4 @@ Composite Sprite の合成計算（`sprite.Part.Place`）は Ebitengine に依�
 
 ## 未対応（後続 Issue）
 
-- Sprite アニメーション（YTA-9）
 - iPhone Safari / iframe 検証（YTA-10）

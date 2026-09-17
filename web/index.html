@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ぷゆもんコロシアム 155 Battle (PoC)</title>
+<!-- favicon未設定による404を避ける。アイコンはPoCの範囲外。 -->
+<link rel="icon" href="data:,">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #1b2438;
+  }
+  canvas {
+    display: block;
+  }
+  #status {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
+    color: #c8d2e0;
+    font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    text-align: center;
+    white-space: pre-wrap;
+  }
+  #status[hidden] {
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div id="status">loading WebAssembly...</div>
+<script src="wasm_exec.js"></script>
+<script>
+  const status = document.getElementById("status");
+
+  function fail(message) {
+    status.hidden = false;
+    status.textContent = "failed to start\n\n" + message;
+  }
+
+  if (typeof Go !== "function") {
+    fail("wasm_exec.js was not loaded.\nRun `make wasm` to copy it from GOROOT.");
+  } else if (!WebAssembly.instantiateStreaming) {
+    fail("this browser does not support WebAssembly.instantiateStreaming.");
+  } else {
+    const go = new Go();
+    WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject)
+      .then((result) => {
+        status.hidden = true;
+        return go.run(result.instance);
+      })
+      .catch((err) => {
+        fail(String(err));
+      });
+  }
+</script>
+</body>
+</html>

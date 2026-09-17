@@ -170,7 +170,8 @@ Remaining risks     手動確認が必要な点、未解決リスク、既知の
 
 Issue を閉じること自体を目的にしない。目的は Issue の意図と Acceptance Criteria を、
 リポジトリの整合性を保ったまま実装することである。
-Issue のステータス変更は Product Owner の確認を経る。Claude Code が自己判断で Done にしない。
+Issue のステータス変更は Product Owner の確認を経る。ただし **PR がマージされた時点で Done への変更は
+許可済み**とし、その都度確認を取らない。マージ前に Done にはしない。
 
 ## 10. Git discipline
 

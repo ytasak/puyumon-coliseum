@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"testing/fstest"
 )
@@ -51,5 +52,49 @@ func TestHandlerDisablesCaching(t *testing.T) {
 
 	if got, want := rec.Header().Get("Cache-Control"), "no-store"; got != want {
 		t.Errorf("Cache-Control = %q, want %q", got, want)
+	}
+}
+
+// 実機から開くURLを案内できることを確認する。
+// ワイルドカードのアドレスをそのまま出しても実機のSafariでは開けない。
+func TestServeURLs(t *testing.T) {
+	t.Parallel()
+
+	ips := func() []string { return []string{"192.168.1.23"} }
+
+	tests := []struct {
+		name string
+		addr string
+		want []string
+	}{
+		{
+			name: "explicit host",
+			addr: "localhost:8080",
+			want: []string{"http://localhost:8080/"},
+		},
+		{
+			name: "wildcard lists reachable addresses",
+			addr: "0.0.0.0:8080",
+			want: []string{"http://localhost:8080/", "http://192.168.1.23:8080/"},
+		},
+		{
+			name: "port only is a wildcard too",
+			addr: ":8080",
+			want: []string{"http://localhost:8080/", "http://192.168.1.23:8080/"},
+		},
+		{
+			name: "unparsable address is passed through",
+			addr: "not-an-address",
+			want: []string{"http://not-an-address/"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := serveURLs(tt.addr, ips)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("serveURLs(%q) = %v, want %v", tt.addr, got, tt.want)
+			}
+		})
 	}
 }

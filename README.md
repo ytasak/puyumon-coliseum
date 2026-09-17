@@ -8,8 +8,9 @@ Client は Go + [Ebitengine](https://ebitengine.org/) で実装し、最終的�
 開発の進め方は Project Document「AI Development Protocol」に従う。
 
 現在のリポジトリ状態は Milestone「Ebitengine / WASM Emoji PoC」の
-[YTA-9](https://linear.app/ytask/issue/YTA-9) までを実装した、Desktop と WebAssembly の両方で
-起動し、複数の Emoji を組み合わせたキャラクターがアニメーションするゲームクライアント。
+[YTA-10](https://linear.app/ytask/issue/YTA-10) までを実装した、Desktop と WebAssembly の両方で
+起動し、タップでアニメーションを発火できる Composite Emoji のゲームクライアント。
+実機 iPhone Safari での検証結果は [docs/mobile-safari-poc.md](docs/mobile-safari-poc.md) に記録する。
 
 ## 必要環境
 
@@ -27,13 +28,13 @@ make run          # go run ./cmd/game と同じ
 
 論理解像度 640x360 を 2 倍したウィンドウ（1280x720）が開く。画面には次が表示される。
 
-- 左上: PoC 識別用テキストと tick カウンタ。増え続けていればゲームループが動作している
-- 中央: 4 体のキャラクターが `idle` / `attack` / `hit` / `emphasis` を繰り返す。
-  ナッシー型（`🌴` + `🥺 😫 🤪`）とクジラ型（`🐋` + `😫 ⭐`）へ別々の動きを割り当てている
-- 各キャラクターの頭上: `💤` `⚡` `💥` `❄️` の particle が出て、上がりながら消える
+- 左上: PoC 識別用テキスト、`fps` / `tps`、tick、タップ回数、最後のタップ座標
+- 中央: ナッシー型（`🌴` + `🥺 😫 🤪`）。待機アニメーションで上下し、待機中は `💤` が出る
+- 下部: `ATTACK` / `HIT` / `EMPHASIS` のタップ領域。それぞれ `⚡` / `💥` / `❄️` が出る
+- タップした位置: 黄色い十字の印
 
-どのキャラクターも動き終わったあとに元の位置・大きさへ戻り、繰り返しても
-少しずつずれていかなければ成立している。
+動き終わったあとに元の位置・大きさへ戻り、繰り返しても少しずつずれていかなければ成立している。
+印が押した場所に出ていれば、入力座標が論理座標へ正しく変換されている。
 
 ウィンドウを閉じるとアプリケーションが終了する。
 
@@ -54,6 +55,19 @@ iframe へ埋め込んだ状態を確認する場合は <http://localhost:8080/i
 
 `main.wasm` は約 21 MB（gzip 約 5.3 MB）ある。初回ロードには時間がかかる。
 内訳と削減の選択肢は [docs/emoji-rendering.md](docs/emoji-rendering.md) を参照。
+
+### 実機（iPhone Safari）
+
+同じ Wi-Fi にいる iPhone から開くには、LAN へ公開して配信する。
+
+```sh
+make serve SERVE_ADDR=0.0.0.0:8080
+```
+
+起動時に表示される `http://<LAN IP>:8080/` を iPhone の Safari で開く。
+iframe 埋め込みの確認は `http://<LAN IP>:8080/iframe.html`。
+
+検証手順とチェックリストは [docs/mobile-safari-poc.md](docs/mobile-safari-poc.md) にある。
 
 ビルドだけ行う場合は次のとおり。
 
@@ -89,9 +103,11 @@ cmd/game/main.go            エントリポイント。ウィンドウ設定と�
 cmd/serve/main.go           WASM 動作確認用のローカル静的ファイルサーバ
 internal/game/game.go       Game 型（ebiten.Game の Update / Draw）と描画
 internal/game/layout.go     論理解像度の定数と Layout
-internal/game/spritescene.go PoC の画面構成、キャラクター定義、デモの進行
+internal/game/spritescene.go PoC の画面構成、キャラクター定義、タップ領域
+internal/game/input.go      マウス / タッチの取得
 internal/sprite/            複数 Emoji を 1 体として定義・描画する Composite Sprite 層
 internal/anim/              アニメーションの状態管理と Emoji particle
+docs/mobile-safari-poc.md   iPhone Safari / iframe 検証の手順と記録（YTA-10）
 internal/emoji/             Emoji 素材のフォント読み込みとセル画像のキャッシュ
 internal/emoji/assets/      同梱フォントと、その出典・ライセンス
 docs/emoji-rendering.md     カラー Emoji 描画の検証記録（YTA-7）
@@ -141,6 +157,11 @@ Linear に明示されていない箇所について、以下を採用した。�
 | 複数アニメーションの競合 | 単発アニメーションの同時再生を禁止し、再生中の要求は順番待ちへ積む | Issue が PoC で許容している方式。どの動きが出ているかが常に 1 つに定まる。中断は行わない |
 | 動きの大きさの単位 | character-local 座標（`1.0` = Emoji セル 1 個分）で持ち、`Transform.Scale` を掛ける | キャラクターを拡大縮小しても動きの見た目の比率が変わらない |
 | particle の消え方 | 終盤で縮めて消す。アルファは使わない | `Renderer` に色・透明度の引数を増やさずに済む。PoC で必要な「一定時間後に消滅」は満たせる |
+| 入力の取得 | マウスとタッチの両方を拾い、座標変換は Ebitengine へ任せる | Desktop・ブラウザ・iframe の中で同じコードになる。変換が合っているかは画面のタップマーカーで実機確認する |
+| タッチとページの競合 | canvas へ `touch-action: none`、viewport で `user-scalable=no` | これが無いと、ゲームを操作したつもりでページがスクロール・ズームしてしまい、入力の確認にならない |
+| 実機での情報表示 | 起動時間・転送量・`devicePixelRatio`・viewport・iframe 内かどうかを画面へ出す | 実機では console を見られないことがある。チェックリストの記入に必要な値を画面から読めるようにする |
+| iframe の sandbox | `allow-scripts allow-same-origin` を明示 | 埋め込み側が制限をかけた状態を再現する。この 2 つは WASM の起動と同一オリジンの `main.wasm` 取得に必要な最小限 |
+| 配信時の URL 表示 | ワイルドカードで待ち受けたら LAN の IP を並べる | `http://0.0.0.0:8080/` は実機から開けない。実機検証のたびに IP を調べ直さずに済む |
 | `wasm_exec.js` | `make wasm` が GOROOT からコピーし、commit しない | Go の同梱物なのでツールチェーンとバージョンを一致させる。生成物を commit しない方針とも揃う |
 | ローカル配信サーバ | 標準ライブラリだけの Go 実装（`cmd/serve`） | `.wasm` の Content-Type が `application/wasm` でないと `instantiateStreaming` が失敗する。Go の `mime` なら確実で、外部ツールへの依存も増えない |
 | 配信時のキャッシュ | `Cache-Control: no-store` | 再ビルドした `.wasm` が古いキャッシュのまま検証される事故を防ぐ |
@@ -188,6 +209,8 @@ Composite Sprite の合成計算（`sprite.Part.Place`）は Ebitengine に依�
   [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) で利用
 - フォント化: [twemoji-colr](https://github.com/mozilla/twemoji-colr) © Mozilla Foundation、Apache License 2.0
 
-## 未対応（後続 Issue）
+## 未対応
 
-- iPhone Safari / iframe 検証（YTA-10）
+Milestone「Ebitengine / WASM Emoji PoC」の実装は一通り揃っている。
+残るのは実機 iPhone Safari での検証と、その結果にもとづく Go / No-Go 判断。
+手順と記録先は [docs/mobile-safari-poc.md](docs/mobile-safari-poc.md)。

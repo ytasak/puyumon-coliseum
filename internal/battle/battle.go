@@ -32,12 +32,15 @@ const TeamSize = 3
 var ErrInvalidState = errors.New("battle: invalid state")
 
 // Side はどちらのプレイヤーかを表す。BattleState.Playersの添字にそのまま使える。
+//
+// どちらが先に行動するかはSideでは決まらない。行動順はmove priority、
+// effective Speed、それでも並んだ場合のseeded RNGで決まる。
 type Side int
 
 const (
-	// Player1 は先手側のプレイヤー。
+	// Player1 はプレイヤー1側。
 	Player1 Side = iota
-	// Player2 は後手側のプレイヤー。
+	// Player2 はプレイヤー2側。
 	Player2
 )
 

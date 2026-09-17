@@ -49,6 +49,27 @@ func TestImageIsGeneratedOncePerEmoji(t *testing.T) {
 	}
 }
 
+// requiredGlyphs はPoCで使えることを保証するEmoji（YTA-7のRequired glyphs）。
+// ⚡ ❄️ 💥 💤 はYTA-9のparticleでも使う。
+var requiredGlyphs = []string{"🌴", "🥺", "😫", "🤪", "🐂", "⭐", "⚡", "🐋", "💋", "❄️", "💥", "💤"}
+
+// 同梱フォントが必須Emojiをすべてカラーglyphとして持つことを確認する。
+// フォントを差し替えたときに、必要なEmojiが欠けたことへ気付けるようにする。
+//
+// ヘッドレスではpixelを読み出せないため色そのものは検証できない。
+// Ebitengineがカラーglyphとして扱っているか（グレースケールのアウトラインや
+// .notdefへ落ちていないか）までを保証し、実際の見た目は目視確認で担保する。
+func TestBundledFontCoversTheRequiredGlyphs(t *testing.T) {
+	t.Parallel()
+
+	s := newSet(t)
+	for _, e := range requiredGlyphs {
+		if !s.IsColorGlyph(e) {
+			t.Errorf("IsColorGlyph(%q) = false, want true; the bundled font cannot render it as a color glyph", e)
+		}
+	}
+}
+
 // 素材として使えないものはIsColorGlyphで弾けること。
 func TestIsColorGlyphRejectsWhatIsNotASingleColorGlyph(t *testing.T) {
 	t.Parallel()

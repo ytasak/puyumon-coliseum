@@ -57,8 +57,10 @@ Desktop 版と同じ内容が表示され、Emoji の見た目が Desktop と一
 iframe へ埋め込んだ状態を確認する場合は <http://localhost:8080/iframe.html> を開く。
 枠内の tick カウンタが増え続けていれば iframe 内でも Update / Draw が継続している。
 
-`main.wasm` は約 21 MB（gzip 約 5.3 MB）ある。初回ロードには時間がかかる。
-内訳と削減の選択肢は [docs/emoji-rendering.md](docs/emoji-rendering.md) を参照。
+`main.wasm` は約 21 MB ある。`make serve` は圧縮しないので初回ロードには時間がかかる。
+本番配信では事前圧縮して配るため、実際の転送量は brotli で約 3.8 MB になる。
+配信手順は [docs/wasm-delivery.md](docs/wasm-delivery.md)、サイズの内訳は
+[docs/emoji-rendering.md](docs/emoji-rendering.md) を参照。
 
 ### 実機（iPhone Safari）
 
@@ -78,8 +80,13 @@ iframe 埋め込みの確認は `http://<LAN IP>:8080/iframe.html`。
 
 ```sh
 make wasm         # web/main.wasm と web/wasm_exec.js を生成する
+make dist         # 本番配信用の成果物を dist/ へ生成する
 make clean        # 生成物を削除する
 ```
+
+`make dist` は非圧縮・gzip・brotli の `main.wasm` と bootstrap ページ一式を `dist/` へ出す。
+brotli コマンドが必要（macOS は `brew install brotli`）。
+配信側に必要なレスポンスヘッダと実測サイズは [docs/wasm-delivery.md](docs/wasm-delivery.md) にある。
 
 `file://` では `WebAssembly.instantiateStreaming` が使えないため、必ず HTTP 経由で開くこと。
 配信ポートを変える場合は `make serve SERVE_ADDR=localhost:9000` のように指定する。
@@ -113,6 +120,7 @@ internal/game/input.go      マウス / タッチの取得
 internal/sprite/            複数 Emoji を 1 体として定義・描画する Composite Sprite 層
 internal/anim/              アニメーションの状態管理と Emoji particle
 docs/mobile-safari-poc.md   iPhone Safari / iframe 検証の手順と記録（YTA-10）
+docs/wasm-delivery.md       本番配信時の圧縮手順と実測サイズ（YTA-12）
 internal/emoji/             Emoji 素材のフォント読み込みとセル画像のキャッシュ
 internal/emoji/assets/      同梱フォントと、その出典・ライセンス
 docs/emoji-rendering.md     カラー Emoji 描画の検証記録（YTA-7）
@@ -120,7 +128,8 @@ web/index.html              Go WASM runtime と main.wasm をロードする boo
 web/iframe.html             iframe 埋め込み確認用ページ
 ```
 
-`web/main.wasm` と `web/wasm_exec.js` は `make wasm` が生成するため commit していない。
+`web/main.wasm` と `web/wasm_exec.js` は `make wasm` が、`dist/` は `make dist` が生成するため
+commit していない。
 
 ゲームロジックと描画を `main` へ集中させず `internal/game` に閉じている。
 platform 固有の処理（ウィンドウ設定・HTTP 配信・ブラウザ bootstrap）は `cmd` と `web` に置き、
@@ -171,6 +180,9 @@ Linear に明示されていない箇所について、以下を採用した。�
 | `wasm_exec.js` | `make wasm` が GOROOT からコピーし、commit しない | Go の同梱物なのでツールチェーンとバージョンを一致させる。生成物を commit しない方針とも揃う |
 | ローカル配信サーバ | 標準ライブラリだけの Go 実装（`cmd/serve`） | `.wasm` の Content-Type が `application/wasm` でないと `instantiateStreaming` が失敗する。Go の `mime` なら確実で、外部ツールへの依存も増えない |
 | 配信時のキャッシュ | `Cache-Control: no-store` | 再ビルドした `.wasm` が古いキャッシュのまま検証される事故を防ぐ |
+| 本番配信の圧縮 | `make dist` で事前圧縮した `.br` / `.gz` を生成し、配信側は `Content-Encoding` を付けて返す | brotli -q11 で 21.4 MB → 3.8 MB。21 MB の `.wasm` は CDN の自動圧縮のサイズ上限を超えやすく、事前圧縮のほうが確実。圧縮は配信の設定なのでゲーム側のコードは変えない |
+| `-ldflags="-s -w"` | 使わない | 圧縮後で 0.06 MB しか減らない一方、panic 時のシンボルを失う |
+| フォントのサブセット化 | 現時点では行わない | 使う Emoji が未確定で、`fonttools` をビルド依存に追加することになる。再検討の条件は [docs/wasm-delivery.md](docs/wasm-delivery.md) |
 
 ### 直接 dependency
 
@@ -220,7 +232,7 @@ Composite Sprite の合成計算（`sprite.Part.Place`）は Ebitengine に依�
 PoC の結論は Go だが、本実装までに扱う必要がある点が残っている。
 詳細は [docs/mobile-safari-poc.md](docs/mobile-safari-poc.md) の「持ち越す課題」を参照。
 
-- **配信時の圧縮** — `cmd/serve` は圧縮しない。本番配信では gzip / brotli を有効にする
-  （`main.wasm` は 21.4 MB、gzip で 5.4 MB）
+- **配信時の圧縮** — 手順は [docs/wasm-delivery.md](docs/wasm-delivery.md) で確定済み（brotli で 3.8 MB）。
+  残るのは配信基盤の選定と、実配信での転送量の確認
 - **モバイル回線での初回ロード** — 実測は LAN のみ。ロード中の表示を含めて配信方法を決める段階で扱う
 - ~~**縦持ちでの画面の使い方**~~ — YTA-11 で決着。横持ち前提を維持し、縦長で開かれたときは横持ちを促す

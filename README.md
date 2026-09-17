@@ -8,8 +8,8 @@ Client は Go + [Ebitengine](https://ebitengine.org/) で実装し、最終的�
 開発の進め方は Project Document「AI Development Protocol」に従う。
 
 現在のリポジトリ状態は Milestone「Ebitengine / WASM Emoji PoC」の
-[YTA-7](https://linear.app/ytask/issue/YTA-7) までを実装した、Desktop と WebAssembly の両方で
-起動し、同梱フォントでカラー Emoji を描画するゲームクライアント。
+[YTA-8](https://linear.app/ytask/issue/YTA-8) までを実装した、Desktop と WebAssembly の両方で
+起動し、複数の Emoji を組み合わせた 1 体のキャラクターを描画するゲームクライアント。
 
 ## 必要環境
 
@@ -28,10 +28,11 @@ make run          # go run ./cmd/game と同じ
 論理解像度 640x360 を 2 倍したウィンドウ（1280x720）が開く。画面には次が表示される。
 
 - 左上: PoC 識別用テキストと tick カウンタ。増え続けていればゲームループが動作している
-- 中央: カラー Emoji 12 種（`🌴 🥺 😫 🤪 🐂 ⭐ ⚡ 🐋 💋 ❄️ 💥 💤`）のグリッド
-- 下部: 同じ Emoji を 0.5x / 1.0x / 1.5x / 2.0x で並べた拡大縮小サンプル
+- 上段: 定義の異なる 2 体のキャラクター。ナッシー型（`🌴` + `🥺 😫 🤪`）とクジラ型（`🐋` + `😫 ⭐`）
+- 下段: 同じナッシー型の定義を 0.6x / 15 度回転 / 1.2x で並べたもの
 
-Emoji が単色や豆腐ではなくカラーで表示されていれば、同梱フォントでの描画が成立している。
+Emoji が単色や豆腐ではなくカラーで表示され、下段のどれもキャラクターとしての
+形を保っていれば（部品だけがずれたり大きさが崩れたりしていなければ）成立している。
 
 ウィンドウを閉じるとアプリケーションが終了する。
 
@@ -87,7 +88,8 @@ cmd/game/main.go            エントリポイント。ウィンドウ設定と�
 cmd/serve/main.go           WASM 動作確認用のローカル静的ファイルサーバ
 internal/game/game.go       Game 型（ebiten.Game の Update / Draw）と描画
 internal/game/layout.go     論理解像度の定数と Layout
-internal/game/emojiscene.go Emoji 描画 PoC の画面構成
+internal/game/spritescene.go Composite Sprite PoC の画面構成とキャラクター定義
+internal/sprite/            複数 Emoji を 1 体として定義・描画する Composite Sprite 層
 internal/emoji/             Emoji 素材のフォント読み込みとセル画像のキャッシュ
 internal/emoji/assets/      同梱フォントと、その出典・ライセンス
 docs/emoji-rendering.md     カラー Emoji 描画の検証記録（YTA-7）
@@ -105,6 +107,10 @@ platform 固有の処理（ウィンドウ設定・HTTP 配信・ブラウザ bo
 `internal/emoji` は Emoji を「UI テキスト」ではなく「スプライト素材」として供給する層で、
 画面構成（どこに何を並べるか）は持たない。画面構成は `internal/game` 側に置く。
 
+`internal/sprite` はキャラクターの**定義**（どの Emoji をどこに置くか）と**描画**を分けている。
+定義と座標計算は Ebitengine に依存せず、描画だけが `Renderer` に閉じている。
+キャラクターごとの分岐は描画側に持たせないため、新しいキャラクターの追加は定義を増やすだけで済む。
+
 ## 技術的な判断
 
 Linear に明示されていない箇所について、以下を採用した。変更が必要になった場合は Linear 側の仕様を先に更新する。
@@ -119,6 +125,11 @@ Linear に明示されていない箇所について、以下を採用した。�
 | Emoji フォント | Twemoji Mozilla 0.7.0（COLRv0）を同梱 | Ebitengine v2.10 は COLRv0 を描画できるが **COLRv1 は非対応**。候補中もっとも小さく（1.4 MB）、ベクターで拡大に強く、送り幅が正方 1em で共通の描画単位を定義しやすい。比較の実測値は [docs/emoji-rendering.md](docs/emoji-rendering.md) |
 | Emoji の描画単位 | 128px 四方のセル画像 1 枚 = Emoji 1 文字。アンカーは em box の中心 | 表示サイズをセルの拡大縮小だけで決め、Emoji ごとの位置補正を不要にする。セルをキャッシュするので毎フレームのグリフ生成も起きない |
 | Emoji のフォールバック | OS のフォントにフォールバックしない | Desktop とブラウザで同じ絵を出すため、同梱フォントだけで描画結果を固定する |
+| キャラクターの座標系 | character-local 座標。1.0 = Emoji セル 1 個分、原点はキャラクター中心 | 画面サイズや表示倍率と定義を切り離す。キャラクターごとに暗黙の基準を作らないため、アンカーは全部品でセル中心に統一する |
+| `Transform.Scale` の単位 | character-local 座標 1.0 あたりの pixel 数 | 「キャラクターを何 px で出すか」を 1 つの値で決められる。部品の大きさと部品間の距離が必ず同じ倍率で変わる |
+| 描画順 | `NewCharacter` が `Z` の昇順へ 1 度だけ並べ替え、`Draw` はその順に描く | 描画のたびにソートしない。同じ `Z` は定義順を保つので、定義側で順序を明示できる |
+| Composite のキャッシュ | 実装しない。`Draw` が `dst` を引数に取るので offscreen へ描いて使い回せる構造にとどめる | PoC のキャラクターは数部品しかなく、キャッシュしても得られるものが少ない。必要になった時点で呼び出し側が offscreen を用意すればよい |
+| 2 体目のキャラクター（クジラ型） | 定義だけ追加し、描画コードは増やさない | 「新キャラクター追加に専用 draw function を必要としない」ことを画面とテストの両方で確認するため。デザインとしては未確定 |
 | `wasm_exec.js` | `make wasm` が GOROOT からコピーし、commit しない | Go の同梱物なのでツールチェーンとバージョンを一致させる。生成物を commit しない方針とも揃う |
 | ローカル配信サーバ | 標準ライブラリだけの Go 実装（`cmd/serve`） | `.wasm` の Content-Type が `application/wasm` でないと `instantiateStreaming` が失敗する。Go の `mime` なら確実で、外部ツールへの依存も増えない |
 | 配信時のキャッシュ | `Cache-Control: no-store` | 再ビルドした `.wasm` が古いキャッシュのまま検証される事故を防ぐ |
@@ -149,6 +160,10 @@ pixel の読み出し（`Image.At`）ができないため、描画結果その�
 Emoji についても色そのものは検証できないため、必須 Emoji が同梱フォントの
 単一カラーグリフへ解決されるところまでを自動テストで確認し、実際の色は目視確認で担保している。
 
+Composite Sprite の合成計算（`sprite.Part.Place`）は Ebitengine に依存しない純粋関数なので、
+描画コンテキストなしで検証している。全体の移動・拡大・回転で部品どうしの位置関係が保たれることは
+ここでテストしており、目視確認に頼っていない。
+
 ## クレジット
 
 本リポジトリは次のアセットを同梱している。配布時もこの表示を成果物側に残すこと。
@@ -159,6 +174,5 @@ Emoji についても色そのものは検証できないため、必須 Emoji �
 
 ## 未対応（後続 Issue）
 
-- Composite Emoji Sprite（YTA-8）
 - Sprite アニメーション（YTA-9）
 - iPhone Safari / iframe 検証（YTA-10）

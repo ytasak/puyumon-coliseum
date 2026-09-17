@@ -59,6 +59,10 @@ type Game struct {
 	// 毎tick確保しないために保持する。
 	touchIDs []ebiten.TouchID
 	tapped   []image.Point
+
+	// outsideWidth, outsideHeight はLayoutが受け取った外側のサイズ。
+	// 画面の向きの判定にだけ使う。論理解像度には影響しない。
+	outsideWidth, outsideHeight int
 }
 
 // 実装漏れをコンパイル時に検出する。
@@ -90,8 +94,17 @@ func (g *Game) Ticks() uint64 {
 }
 
 // Draw は1フレーム分の描画を行う。
+//
+// 縦長で開かれているときはゲーム画面の代わりに横持ちを促す。
+// Updateは止めないので、横にすればそのまま続きが見える。
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Fill(backgroundColor)
+
+	if needsRotation(g.outsideWidth, g.outsideHeight) {
+		g.drawRotatePrompt(screen)
+		return
+	}
+
 	g.drawSpritePoC(screen)
 	ebitenutil.DebugPrintAt(screen, g.overlayText(), overlayTextOriginX, overlayTextOriginY)
 }

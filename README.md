@@ -7,10 +7,12 @@ Client は Go + [Ebitengine](https://ebitengine.org/) で実装し、最終的�
 [ぷゆもんコロシアム 155 Battle](https://linear.app/ytask/project/ぷゆもんコロシアム-155-battle-2372a3a4229f) プロジェクト。
 開発の進め方は Project Document「AI Development Protocol」に従う。
 
-現在のリポジトリ状態は Milestone「Ebitengine / WASM Emoji PoC」の
-[YTA-10](https://linear.app/ytask/issue/YTA-10) までを実装した、Desktop と WebAssembly の両方で
-起動し、タップでアニメーションを発火できる Composite Emoji のゲームクライアント。
-実機 iPhone Safari での検証結果は [docs/mobile-safari-poc.md](docs/mobile-safari-poc.md) に記録する。
+現在のリポジトリ状態は Milestone「Ebitengine / WASM Emoji PoC」を一通り実装した、
+Desktop と WebAssembly の両方で起動し、タップでアニメーションを発火できる
+Composite Emoji のゲームクライアント。
+
+実機 iPhone Safari / iframe での検証は完了しており、**この構成を本実装へ採用する（Go）**という結論。
+検証結果と持ち越した課題は [docs/mobile-safari-poc.md](docs/mobile-safari-poc.md) にある。
 
 ## 必要環境
 
@@ -209,8 +211,12 @@ Composite Sprite の合成計算（`sprite.Part.Place`）は Ebitengine に依�
   [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) で利用
 - フォント化: [twemoji-colr](https://github.com/mozilla/twemoji-colr) © Mozilla Foundation、Apache License 2.0
 
-## 未対応
+## 持ち越した課題
 
-Milestone「Ebitengine / WASM Emoji PoC」の実装は一通り揃っている。
-残るのは実機 iPhone Safari での検証と、その結果にもとづく Go / No-Go 判断。
-手順と記録先は [docs/mobile-safari-poc.md](docs/mobile-safari-poc.md)。
+PoC の結論は Go だが、本実装までに扱う必要がある点が残っている。
+詳細は [docs/mobile-safari-poc.md](docs/mobile-safari-poc.md) の「持ち越す課題」を参照。
+
+- **配信時の圧縮** — `cmd/serve` は圧縮しない。本番配信では gzip / brotli を有効にする
+  （`main.wasm` は 21.4 MB、gzip で 5.4 MB）
+- **モバイル回線での初回ロード** — 実測は LAN のみ。ロード中の表示を含めて配信方法を決める段階で扱う
+- **縦持ちでの画面の使い方** — 論理解像度 640x360 は横長。Battle 画面のレイアウトを決めるときに判断する

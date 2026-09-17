@@ -17,6 +17,7 @@ Composite Emoji のゲームクライアント。
 ここから Generation I 準拠の Battle Engine を `internal/battle` に実装していく。
 現在あるのは domain model と seeded RNG までで、ダメージ計算などの mechanics はこれから追加する。
 対戦仕様の正は Linear の Project Document「Battle Rules Specification」。
+active / reserve や multi-turn state といった用語も、同 Document の Glossary の意味で使う。
 
 ## 必要環境
 

@@ -139,7 +139,9 @@ func TestValidateRejectsImpossibleValues(t *testing.T) {
 		{"PP above the maximum", func(s *BattleState) { s.Players[Player1].Team[0].Moves[0].PP = 99 }},
 		{"negative PP", func(s *BattleState) { s.Players[Player1].Team[0].Moves[0].PP = -1 }},
 		{"PP on an empty slot", func(s *BattleState) { s.Players[Player1].Team[0].Moves[3].PP = 5 }},
-		{"negative multi-turn counter", func(s *BattleState) { s.Players[Player1].Team[0].MultiTurn.TurnsLeft = -1 }},
+		{"negative continuing move counter", func(s *BattleState) {
+			s.Players[Player1].Team[0].ContinuingMove.TurnsLeft = -1
+		}},
 	}
 
 	for _, tt := range tests {
@@ -198,29 +200,39 @@ func TestBattleStateCopiesIndependently(t *testing.T) {
 	}
 }
 
-// reserveは場に出ていない残りのindexになる。
-func TestReserveExcludesActive(t *testing.T) {
+// reserveは控えのうち、まだ戦える個体だけになる。
+// 戦闘不能の個体は交代先にならないため含めない（Glossaryのreserveの定義）。
+func TestReserveExcludesActiveAndFainted(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		active int
-		want   []int
+		name    string
+		active  int
+		fainted []int
+		want    []int
 	}{
-		{0, []int{1, 2}},
-		{1, []int{0, 2}},
-		{2, []int{0, 1}},
+		{"all healthy, first active", 0, nil, []int{1, 2}},
+		{"all healthy, middle active", 1, nil, []int{0, 2}},
+		{"all healthy, last active", 2, nil, []int{0, 1}},
+		{"one reserve fainted", 0, []int{1}, []int{2}},
+		{"every reserve fainted", 0, []int{1, 2}, []int{}},
+		{"active fainted too", 0, []int{0, 1}, []int{2}},
 	}
 
 	for _, tt := range tests {
-		player := Player{Team: testTeam(), Active: tt.active}
+		team := testTeam()
+		for _, i := range tt.fainted {
+			team[i].CurrentHP = 0
+		}
+		player := Player{Team: team, Active: tt.active}
 
 		got := player.Reserve()
 		if len(got) != len(tt.want) {
-			t.Fatalf("Reserve() = %v, want %v", got, tt.want)
+			t.Fatalf("%s: Reserve() = %v, want %v", tt.name, got, tt.want)
 		}
 		for i := range got {
 			if got[i] != tt.want[i] {
-				t.Fatalf("Reserve() = %v, want %v", got, tt.want)
+				t.Fatalf("%s: Reserve() = %v, want %v", tt.name, got, tt.want)
 			}
 		}
 	}

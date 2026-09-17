@@ -125,12 +125,14 @@ func (m MoveSlot) Usable() bool {
 	return !m.Empty() && m.PP > 0
 }
 
-// MultiTurn は複数turnにまたがる技の進行状態。
+// ContinuingMove は同じ技を複数turnにまたがって出し続けている状態。
 //
-// Hyper Beamの反動のように次のturnを消費するものはRechargingで表し、
-// こちらは「同じ技を続けて出している」状態を表す。どの技がどう進むかは
-// 技側の挙動を実装するIssueで決める。
-type MultiTurn struct {
+// Glossaryのmulti-turn stateは、turnをまたいで保持される状態すべての総称で、
+// Recharging・SleepTurns・このContinuingMoveがまとめてそれにあたる。
+// 型名を総称と同じにすると指す範囲を取り違えるため、ここでは技の継続だけを表す名前にした。
+//
+// どの技がどう進むかは、技側の挙動を実装するIssueで決める。
+type ContinuingMove struct {
 	// Move は継続している技。空なら継続中の技は無い。
 	Move MoveID
 
@@ -139,7 +141,7 @@ type MultiTurn struct {
 }
 
 // Active は継続中の技があるかを返す。
-func (m MultiTurn) Active() bool {
+func (m ContinuingMove) Active() bool {
 	return m.Move != "" && m.TurnsLeft > 0
 }
 
@@ -172,8 +174,8 @@ type Pokemon struct {
 	// Recharging は反動で次のturnに行動できない状態か。
 	Recharging bool
 
-	// MultiTurn は複数turnにまたがる技の進行状態。
-	MultiTurn MultiTurn
+	// ContinuingMove は同じ技を出し続けている状態。
+	ContinuingMove ContinuingMove
 }
 
 // Fainted は戦闘不能かを返す。
@@ -225,9 +227,9 @@ func (p *Pokemon) validate() error {
 			return fmt.Errorf("move[%d]: %w", i, err)
 		}
 	}
-	if p.MultiTurn.TurnsLeft < 0 {
-		return fmt.Errorf("%w: multi-turn turns left %d is negative",
-			ErrInvalidState, p.MultiTurn.TurnsLeft)
+	if p.ContinuingMove.TurnsLeft < 0 {
+		return fmt.Errorf("%w: continuing move turns left %d is negative",
+			ErrInvalidState, p.ContinuingMove.TurnsLeft)
 	}
 	return nil
 }

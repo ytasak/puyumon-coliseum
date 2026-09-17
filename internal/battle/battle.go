@@ -10,6 +10,9 @@
 // 仕様の正はLinearのProject Document「Battle Rules Specification v0.1」。
 // このpackageはそこで定義されたmodelの範囲だけを持ち、ダメージ計算・タイプ相性・
 // 命中判定・状態異常の挙動は別のIssueで追加する。
+//
+// active / reserve / multi-turn state / Event logといった用語は、
+// 同DocumentのGlossaryの意味で使う。一般的なRBYの知識から補完しない。
 package battle
 
 import (
@@ -102,7 +105,8 @@ type Player struct {
 	// Eventやactionからは常にこのindexでPokemonを指せる。
 	Team [TeamSize]Pokemon
 
-	// Active は場に出ているPokemonのTeam内index。残りがreserveにあたる。
+	// Active は場に出ているPokemonのTeam内index。
+	// 場に出ておらず、まだ戦えるものがreserveにあたる。
 	Active int
 }
 
@@ -114,11 +118,14 @@ func (p *Player) ActivePokemon() *Pokemon {
 	return &p.Team[p.Active]
 }
 
-// Reserve は場に出ていないPokemonのTeam内indexを昇順で返す。
+// Reserve は控えのうち、まだ戦えるPokemonのTeam内indexを昇順で返す。
+//
+// 戦闘不能のPokemonは交代先にならないため含めない。
+// Glossaryのreserveは「控えの生存Pokemon」を指すので、それに合わせている。
 func (p *Player) Reserve() []int {
 	reserve := make([]int, 0, TeamSize-1)
 	for i := range p.Team {
-		if i != p.Active {
+		if i != p.Active && !p.Team[i].Fainted() {
 			reserve = append(reserve, i)
 		}
 	}

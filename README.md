@@ -128,7 +128,7 @@ internal/game/spritescene.go PoC の画面構成、キャラクター定義、�
 internal/game/input.go      マウス / タッチの取得
 internal/sprite/            複数 Emoji を 1 体として定義・描画する Composite Sprite 層
 internal/anim/              アニメーションの状態管理と Emoji particle
-internal/battle/            Battle Engine の domain model と seeded RNG（UI 非依存）
+internal/battle/            Battle Engine の domain model・タイプ相性・seeded RNG（UI 非依存）
 docs/mobile-safari-poc.md   iPhone Safari / iframe 検証の手順と記録（YTA-10）
 docs/wasm-delivery.md       本番配信時の圧縮手順と実測サイズ（YTA-12）
 docs/loading-experience.md  初回ロード中の表示と、回線別のロード時間（YTA-13）
@@ -158,6 +158,7 @@ platform 固有の処理（ウィンドウ設定・HTTP 配信・ブラウザ bo
 状態（`BattleState`）・行動（`Action`）・結果（`Event`）だけを持ち、描画や入力を知らない。
 乱数は `RNG` として外から渡すため、同じ初期状態・同じ行動列・同じ seed からいつでも同じ結果を再現できる。
 キャラクターや技は識別子（`SpeciesID` / `MoveID`）で参照するだけで、domain 側にキャラクター固有の分岐を持たせない。
+タイプ相性のようなゲーム定義はデータとして持ち、ロジックはそれを解釈するだけにしている。
 
 `internal/anim` はアニメーションの**状態**だけを持ち、キャラクター定義も base transform も持たない。
 描画に使う transform は毎回 base から計算し直すため、再生を繰り返してもずれが蓄積しない。
@@ -204,6 +205,12 @@ Linear に明示されていない箇所について、以下を採用した。�
 | 乱数 | splitmix64 を自前実装し、`RNG` interface で注入する | 生成列をこのリポジトリのコードだけで固定する。標準ライブラリの版差で golden test が壊れるのを避ける。global state に依存しないので、同じ seed から必ず同じ対戦を再現できる |
 | 乱数を状態に含めるか | 含めない。`BattleState` は値として複製できる pure な状態のままにする | 状態を複製しても乱数列が分岐しない。seed の管理は resolver 側の責務になる |
 | キャラクター・技の参照 | `SpeciesID` / `MoveID` という識別子だけを持つ | 実データの定義は後続 Issue の範囲。domain 側がキャラクター名で分岐しない構造を最初から守る |
+| Gen I のタイプ相性 | 出荷 ROM と同じ 82 エントリをデータとして持ち、表に無い組み合わせは等倍 | 現代世代の知識で「直して」しまう事故を防ぐ。データは [pokered](https://github.com/pret/pokered) の `data/types/type_matchups.asm` と突き合わせた。後の世代で変わった相性は個別の test でも固定している |
+| ゴースト技 → エスパー | 0×（効かない）。出荷されたとおり | 本来は効果ばつぐんの意図だったとされる実装ミスだが、初代の対戦を決定づけた挙動のため維持する。Product Owner 判断 |
+| 相性倍率の持ち方 | 100 を等倍とする整数 | 0.25 / 0.5 / 2 / 4 を誤差なく扱える。ただし Gen I はダメージへ防御側のタイプごとに掛けて都度切り捨てるため、ダメージ計算では合成値ではなく `Against` をタイプごとに使う |
+| stage 倍率の持ち方 | 分子・分母のまま持つ（`25/100` 〜 `4/1`） | Gen I は整数演算で掛けるので、小数へ直すと端数の出る値で結果がずれる。値は pokered の `data/battle/stat_modifiers.asm` と一致 |
+| 命中・回避の stage | 能力値と同じ倍率表を使う | Gen I では同一。別の表になるのは Gen II 以降 |
+| stage 適用時の頭打ち | `ApplyStage` では 1〜999 の頭打ちをしない | どこで頭打ちにするかは能力値・ダメージ計算側で決める。倍率の適用だけを純粋に行う |
 | ロード中の表示 | テキストのみ。受信量と、10 秒を超えたときの注意書き | ローディング画面のアートワークは Out of scope。HTML 側で Emoji を出すと OS のフォントで描かれ、起動後の Twemoji と絵柄が変わる。揃えるには 1.4 MB のフォントを別に読ませることになり、待ち時間を減らす目的と逆を向く |
 | 受信量の取り方 | `fetch` した body を自前で数え、同じ内容を `instantiateStreaming` へ渡す | `instantiateStreaming` は受信量を教えてくれない。streaming のまま渡すので起動は遅くならない。圧縮配信では解凍後のバイト数になる（転送量は起動後に Resource Timing から出す） |
 | ロード失敗時 | 理由と再読み込みボタンを出す。自動リトライもタイムアウトによる中断もしない | 実機では console を見られないことがある。iframe 内ではブラウザの再読み込みが埋め込みページ全体に及ぶため、枠の中だけやり直せるようにする。遅いだけの回線を打ち切ると、あと少しで終わる読み込みを捨てることになる |

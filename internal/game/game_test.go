@@ -8,10 +8,20 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
+func newGame(t *testing.T) *Game {
+	t.Helper()
+
+	g, err := New()
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+	return g
+}
+
 func TestNewStartsAtZeroTicks(t *testing.T) {
 	t.Parallel()
 
-	if got := New().Ticks(); got != 0 {
+	if got := newGame(t).Ticks(); got != 0 {
 		t.Errorf("New().Ticks() = %d, want 0", got)
 	}
 }
@@ -22,7 +32,7 @@ func TestUpdateAdvancesTicksWithoutError(t *testing.T) {
 
 	const frames = 600 // 60 TPSで約10秒相当
 
-	g := New()
+	g := newGame(t)
 	for i := 1; i <= frames; i++ {
 		if err := g.Update(); err != nil {
 			t.Fatalf("Update() at frame %d returned error: %v", i, err)
@@ -39,7 +49,7 @@ func TestUpdateAdvancesTicksWithoutError(t *testing.T) {
 func TestDrawDoesNotPanic(t *testing.T) {
 	t.Parallel()
 
-	g := New()
+	g := newGame(t)
 	screen := ebiten.NewImage(LogicalWidth, LogicalHeight)
 
 	g.Draw(screen)
@@ -53,9 +63,9 @@ func TestDrawDoesNotPanic(t *testing.T) {
 func TestOverlayTextIdentifiesThePoC(t *testing.T) {
 	t.Parallel()
 
-	got := New().overlayText()
+	got := newGame(t).overlayText()
 
-	for _, want := range []string{"PUYUMON COLISEUM", "YTA-5", "640x360", "ticks: 0"} {
+	for _, want := range []string{"PUYUMON COLISEUM", "YTA-7", "640x360", "ticks: 0"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("overlayText() = %q, want it to contain %q", got, want)
 		}
@@ -65,7 +75,7 @@ func TestOverlayTextIdentifiesThePoC(t *testing.T) {
 func TestOverlayTextReflectsTicks(t *testing.T) {
 	t.Parallel()
 
-	g := New()
+	g := newGame(t)
 	for i := 0; i < 3; i++ {
 		if err := g.Update(); err != nil {
 			t.Fatalf("Update() returned error: %v", err)
@@ -83,7 +93,7 @@ func TestOverlayTextReflectsTicks(t *testing.T) {
 func TestOverlayTextIsASCIIOnly(t *testing.T) {
 	t.Parallel()
 
-	for _, r := range New().overlayText() {
+	for _, r := range newGame(t).overlayText() {
 		if r > unicode.MaxASCII {
 			t.Errorf("overlayText() contains non-ASCII rune %q", r)
 		}

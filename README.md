@@ -128,7 +128,7 @@ internal/game/spritescene.go PoC の画面構成、キャラクター定義、�
 internal/game/input.go      マウス / タッチの取得
 internal/sprite/            複数 Emoji を 1 体として定義・描画する Composite Sprite 層
 internal/anim/              アニメーションの状態管理と Emoji particle
-internal/battle/            Battle Engine の domain model・タイプ相性・ダメージ計算・seeded RNG（UI 非依存）
+internal/battle/            Battle Engine の domain model・タイプ相性・ダメージ計算・状態異常・seeded RNG（UI 非依存）
 docs/mobile-safari-poc.md   iPhone Safari / iframe 検証の手順と記録（YTA-10）
 docs/wasm-delivery.md       本番配信時の圧縮手順と実測サイズ（YTA-12）
 docs/loading-experience.md  初回ロード中の表示と、回線別のロード時間（YTA-13）
@@ -205,6 +205,10 @@ Linear に明示されていない箇所について、以下を採用した。�
 | 乱数 | splitmix64 を自前実装し、`RNG` interface で注入する | 生成列をこのリポジトリのコードだけで固定する。標準ライブラリの版差で golden test が壊れるのを避ける。global state に依存しないので、同じ seed から必ず同じ対戦を再現できる |
 | 乱数を状態に含めるか | 含めない。`BattleState` は値として複製できる pure な状態のままにする | 状態を複製しても乱数列が分岐しない。seed の管理は resolver 側の責務になる |
 | キャラクター・技の参照 | `SpeciesID` / `MoveID` という識別子だけを持つ | 実データの定義は後続 Issue の範囲。domain 側がキャラクター名で分岐しない構造を最初から守る |
+| ねむりの起床ターン | 目を覚ました turn は行動できない | Gen I の挙動。現代世代と違う点で、誤解されやすいので test でも固定している |
+| こおり | 自然解凍しない。解除は技の側から状態を消して行う | Gen I には自然解凍が無い。現代世代の「毎ターン 20% で溶ける」を持ち込まない |
+| 行動を妨げた理由の返し方 | 真偽値ではなく `StatusBlock`（ねむり / 起床 / こおり / まひ）で返す | 理由ごとに見せ方が変わる。Event の組み立ては turn resolver に任せ、この層は mechanics に絞る |
+| 継続ダメージの順序 | 「先攻が動く → 先攻の継続ダメージ → 後攻が動く → 後攻の継続ダメージ」 | Gen I は turn の終わりへ一括しない。順序を守るのは turn resolver の責務 |
 | Gen I のダメージ計算 | 出荷 ROM と同じ順序で整数演算する。相性は合成値を一度に掛けず、防御側のタイプごとに順に適用する | 掛ける順序と切り捨ての位置が変わると結果が変わる。期待値は pokered の `engine/battle/core.asm` から起こした別実装（Python）で独立に求め、golden test として固定した |
 | 急所 | base Speed 依存。通常技は `floor(base Speed / 2)`、高急所技はその 8 倍で 255 頭打ち。急所時は能力変化を無視し、Level を 2 倍にして計算する | 現代世代の固定確率ではない。base Speed は species データ側から渡す |
 | 能力値が 255 を超えたとき | 攻守とも 1/4 にしてから計算する | Gen I が 1 byte へ収めるための処理。能力を上げたときの結果に影響するので落とせない |

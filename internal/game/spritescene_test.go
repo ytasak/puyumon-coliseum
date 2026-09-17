@@ -5,9 +5,19 @@ import (
 	"testing"
 	"unicode"
 
+	"github.com/ytasak/puyumon-coliseum/internal/anim"
 	"github.com/ytasak/puyumon-coliseum/internal/emoji"
-	"github.com/ytasak/puyumon-coliseum/internal/sprite"
 )
+
+func newEmojiSet(t *testing.T) *emoji.Set {
+	t.Helper()
+
+	set, err := emoji.New()
+	if err != nil {
+		t.Fatalf("emoji.New() returned error: %v", err)
+	}
+	return set
+}
 
 // ナッシー型はIssueが指定した素材（body 🌴 / faces 🥺 😫 🤪）で構成する。
 func TestNassyIsBuiltFromTheSpecifiedMaterials(t *testing.T) {
@@ -31,13 +41,13 @@ func TestNassyIsBuiltFromTheSpecifiedMaterials(t *testing.T) {
 }
 
 // 描画順はZの昇順で、bodyが最初（もっとも奥）に来る。
-func TestPoCCharactersAreOrderedByZ(t *testing.T) {
+func TestDemoCharactersAreOrderedByZ(t *testing.T) {
 	t.Parallel()
 
-	for _, c := range pocCharacters {
-		t.Run(c.label, func(t *testing.T) {
-			for i := 1; i < len(c.character.Parts); i++ {
-				if prev, cur := c.character.Parts[i-1].Z, c.character.Parts[i].Z; prev > cur {
+	for _, demo := range spriteDemos {
+		t.Run(demo.label, func(t *testing.T) {
+			for i := 1; i < len(demo.character.Parts); i++ {
+				if prev, cur := demo.character.Parts[i-1].Z, demo.character.Parts[i].Z; prev > cur {
 					t.Errorf("part %d has Z=%d after Z=%d; parts must be ordered back to front", i, cur, prev)
 				}
 			}
@@ -45,34 +55,126 @@ func TestPoCCharactersAreOrderedByZ(t *testing.T) {
 	}
 }
 
-// PoCキャラクターに使うEmojiは、すべて同梱フォントでカラー描画できる必要がある。
-func TestPoCCharacterPartsUseColorGlyphs(t *testing.T) {
+// キャラクターにもparticleにも、同梱フォントでカラー描画できるEmojiだけを使う。
+func TestDemoEmojiUseColorGlyphs(t *testing.T) {
 	t.Parallel()
 
-	set, err := emoji.New()
-	if err != nil {
-		t.Fatalf("emoji.New() returned error: %v", err)
-	}
-
-	for _, c := range pocCharacters {
-		for _, p := range c.character.Parts {
+	set := newEmojiSet(t)
+	for _, demo := range spriteDemos {
+		for _, p := range demo.character.Parts {
 			if !set.IsColorGlyph(p.Emoji) {
-				t.Errorf("%s: IsColorGlyph(%q) = false, want true", c.label, p.Emoji)
+				t.Errorf("%s: character part %q is not a color glyph", demo.label, p.Emoji)
 			}
+		}
+		if !set.IsColorGlyph(demo.particle) {
+			t.Errorf("%s: particle %q is not a color glyph", demo.label, demo.particle)
 		}
 	}
 }
 
 // Scaleが0の部品は見えない。定義の書き間違いを拾う。
-func TestPoCCharacterPartsHavePositiveScale(t *testing.T) {
+func TestDemoCharacterPartsHavePositiveScale(t *testing.T) {
 	t.Parallel()
 
-	for _, c := range pocCharacters {
-		for _, p := range c.character.Parts {
+	for _, demo := range spriteDemos {
+		for _, p := range demo.character.Parts {
 			if p.Scale <= 0 {
-				t.Errorf("%s: part %q has Scale = %v, want > 0", c.label, p.Emoji, p.Scale)
+				t.Errorf("%s: part %q has Scale = %v, want > 0", demo.label, p.Emoji, p.Scale)
 			}
 		}
+	}
+}
+
+// 画面でIdle / Attack / Hit / Emphasis のすべてを確認できる。
+func TestDemoCoversEveryAnimationPrimitive(t *testing.T) {
+	t.Parallel()
+
+	var idleOnly bool
+	played := map[anim.Motion]bool{}
+	for _, demo := range spriteDemos {
+		if demo.playMotion {
+			played[demo.motion] = true
+		} else {
+			idleOnly = true
+		}
+	}
+
+	if !idleOnly {
+		t.Error("no demo shows the idle motion on its own")
+	}
+	for _, m := range []anim.Motion{anim.Attack, anim.Hit, anim.Emphasis} {
+		if !played[m] {
+			t.Errorf("no demo plays %v", m)
+		}
+	}
+}
+
+// particleにはIssueが指定した4種を使う。
+func TestDemoParticlesAreTheRequiredEmoji(t *testing.T) {
+	t.Parallel()
+
+	var got []string
+	for _, demo := range spriteDemos {
+		got = append(got, demo.particle)
+	}
+	slices.Sort(got)
+
+	want := []string{"⚡", "❄️", "💥", "💤"}
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("demo particles = %v, want %v", got, want)
+	}
+}
+
+// 各demoは1周期にちょうど1回、隣と重ならないタイミングで動き出す。
+func TestDemoTriggersAreStaggeredWithinOnePeriod(t *testing.T) {
+	t.Parallel()
+
+	counts := make([]int, len(spriteDemos))
+	for tick := uint64(0); tick < demoPeriod; tick++ {
+		triggered := 0
+		for i := range spriteDemos {
+			if demoTriggers(i, tick) {
+				counts[i]++
+				triggered++
+			}
+		}
+		if triggered > 1 {
+			t.Errorf("tick %d triggers %d demos at once; they should be staggered", tick, triggered)
+		}
+	}
+
+	for i, got := range counts {
+		if got != 1 {
+			t.Errorf("demo %q triggered %d times per period, want 1", spriteDemos[i].label, got)
+		}
+	}
+}
+
+// ゲームループを回すとparticleが出て、寿命が尽きた分は消える。
+func TestUpdateSpawnsAndRetiresParticles(t *testing.T) {
+	t.Parallel()
+
+	g := newGame(t)
+	if got := g.particles.Len(); got != 0 {
+		t.Fatalf("particles before the first update = %d, want 0", got)
+	}
+
+	var spawned bool
+	for i := 0; i < demoPeriod*4; i++ {
+		if err := g.Update(); err != nil {
+			t.Fatalf("Update() returned error: %v", err)
+		}
+		if g.particles.Len() > 0 {
+			spawned = true
+		}
+		if got, limit := g.particles.Len(), len(spriteDemos); got > limit {
+			t.Fatalf("tick %d: %d particles alive, want at most %d; they are not being retired", i, got, limit)
+		}
+	}
+
+	if !spawned {
+		t.Error("no particle was ever spawned")
 	}
 }
 
@@ -81,32 +183,11 @@ func TestPoCCharacterPartsHavePositiveScale(t *testing.T) {
 func TestSceneLabelsAreASCIIOnly(t *testing.T) {
 	t.Parallel()
 
-	labels := make([]string, 0, len(pocCharacters)+len(transformVariants))
-	for _, c := range pocCharacters {
-		labels = append(labels, c.label)
-	}
-	for _, v := range transformVariants {
-		labels = append(labels, v.label)
-	}
-
-	for _, label := range labels {
-		for _, r := range label {
+	for _, demo := range spriteDemos {
+		for _, r := range demo.label {
 			if r > unicode.MaxASCII {
-				t.Errorf("label %q contains non-ASCII rune %q", label, r)
+				t.Errorf("label %q contains non-ASCII rune %q", demo.label, r)
 			}
-		}
-	}
-}
-
-// 下段のtransformは、全体のscaleかrotationのどちらかを基準から変えている。
-// すべて同じ見た目では「一体として変換される」ことを確認できない。
-func TestTransformVariantsDifferFromTheBaseTransform(t *testing.T) {
-	t.Parallel()
-
-	base := sprite.Transform{Scale: characterScale}
-	for _, v := range transformVariants {
-		if v.scale == base.Scale && v.rotation == base.Rotation {
-			t.Errorf("variant %q is identical to the base transform", v.label)
 		}
 	}
 }

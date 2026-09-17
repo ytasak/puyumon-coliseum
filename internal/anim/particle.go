@@ -7,7 +7,7 @@ const (
 	// particleTicks はparticleが表示されている時間。
 	particleTicks = TPS * 5 / 6
 	// particleRise は生存中に上昇する距離。particleの大きさに対する倍率。
-	particleRise = 0.9
+	particleRise = 1.8
 	// particleShrinkFrom はこの進捗から縮み始める。縮み切ったところで消える。
 	particleShrinkFrom = 0.6
 )

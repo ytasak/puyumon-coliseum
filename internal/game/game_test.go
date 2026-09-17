@@ -65,7 +65,7 @@ func TestOverlayTextIdentifiesThePoC(t *testing.T) {
 
 	got := newGame(t).overlayText()
 
-	for _, want := range []string{"PUYUMON COLISEUM", "YTA-8", "640x360", "ticks: 0"} {
+	for _, want := range []string{"PUYUMON COLISEUM", "YTA-9", "640x360", "ticks: 0"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("overlayText() = %q, want it to contain %q", got, want)
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 
+	"github.com/ytasak/puyumon-coliseum/internal/anim"
 	"github.com/ytasak/puyumon-coliseum/internal/emoji"
 	"github.com/ytasak/puyumon-coliseum/internal/sprite"
 )
@@ -31,7 +32,7 @@ const (
 
 // Game は ebiten.Game の実装。
 //
-// 現時点ではComposite Sprite PoCの状態しか持たない。
+// 現時点ではComposite Sprite animation PoCの状態しか持たない。
 type Game struct {
 	// ticks は Update が呼ばれた回数。ゲームループが継続動作していることを
 	// 画面とtestの双方から観測できるようにするために保持する。
@@ -40,6 +41,13 @@ type Game struct {
 	// sprites はCharacterを描画する。Emoji素材のセル画像を内部で使い回すため、
 	// Gameと同じ寿命で1つだけ持つ。
 	sprites *sprite.Renderer
+
+	// players はspriteDemosと同じ並びのanimation状態。
+	// キャラクター定義とは分けて持つ。
+	players []anim.Player
+
+	// particles は表示中のEmoji particle。
+	particles anim.Particles
 }
 
 // 実装漏れをコンパイル時に検出する。
@@ -53,11 +61,17 @@ func New() (*Game, error) {
 	if err != nil {
 		return nil, fmt.Errorf("game: %w", err)
 	}
-	return &Game{sprites: sprite.NewRenderer(emojis)}, nil
+	return &Game{
+		sprites: sprite.NewRenderer(emojis),
+		players: make([]anim.Player, len(spriteDemos)),
+	}, nil
 }
 
 // Update はEbitengineのtickごとに呼ばれる。
+//
+// ここではanimationの状態だけを進め、描画は行わない。
 func (g *Game) Update() error {
+	g.updateSpriteDemo(g.ticks)
 	g.ticks++
 	return nil
 }
@@ -81,7 +95,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 // この識別用テキストとは描画経路が別になっている。
 func (g *Game) overlayText() string {
 	return fmt.Sprintf(
-		"PUYUMON COLISEUM 155 BATTLE\nYTA-8 composite emoji sprite PoC\nlogical %dx%d / ticks: %d",
+		"PUYUMON COLISEUM 155 BATTLE\nYTA-9 composite sprite animation PoC\nlogical %dx%d / ticks: %d",
 		LogicalWidth, LogicalHeight, g.ticks,
 	)
 }

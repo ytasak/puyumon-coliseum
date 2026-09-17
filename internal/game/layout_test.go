@@ -19,7 +19,7 @@ func TestLayoutReturnsFixedLogicalResolution(t *testing.T) {
 		{"zero", 0, 0},
 	}
 
-	g := New()
+	g := newGame(t)
 	for _, s := range outsideSizes {
 		t.Run(s.name, func(t *testing.T) {
 			gotW, gotH := g.Layout(s.width, s.height)
@@ -35,7 +35,7 @@ func TestLayoutReturnsFixedLogicalResolution(t *testing.T) {
 func TestLayoutIsStableAcrossUpdates(t *testing.T) {
 	t.Parallel()
 
-	g := New()
+	g := newGame(t)
 	wantW, wantH := g.Layout(1280, 720)
 
 	for i := 0; i < 100; i++ {

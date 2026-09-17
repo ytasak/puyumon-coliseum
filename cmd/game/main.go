@@ -14,12 +14,17 @@ import (
 )
 
 func main() {
+	g, err := game.New()
+	if err != nil {
+		log.Fatalf("new game: %v", err)
+	}
+
 	width, height := game.DefaultWindowSize()
 	ebiten.SetWindowSize(width, height)
 	ebiten.SetWindowTitle(game.WindowTitle)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 
-	if err := ebiten.RunGame(game.New()); err != nil && !errors.Is(err, ebiten.Termination) {
+	if err := ebiten.RunGame(g); err != nil && !errors.Is(err, ebiten.Termination) {
 		log.Fatalf("run game: %v", err)
 	}
 }

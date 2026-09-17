@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>iframe embed check - ぷゆもんコロシアム 155 Battle</title>
 <style>
   html, body {
@@ -24,7 +24,12 @@
     margin: 0 0 8px;
   }
   p {
+    margin: 0 0 16px;
+    color: #8b97a8;
+  }
+  ul {
     margin: 0 0 24px;
+    padding-left: 20px;
     color: #8b97a8;
   }
   .frame {
@@ -40,15 +45,42 @@
     height: 100%;
     border: 0;
   }
+  /* 埋め込みの下に置くテキストへスクロールできるだけの高さを作る。
+     ゲームを操作したときにページが一緒に動かないかを実機で確かめるため。 */
+  .scroll-probe {
+    margin-top: 24px;
+    padding: 16px;
+    border: 1px dashed #2c3a52;
+    border-radius: 4px;
+    color: #8b97a8;
+  }
+  .scroll-probe div {
+    height: 60vh;
+  }
 </style>
 </head>
 <body>
 <main>
   <h1>iframe embed check</h1>
-  <p>配信時と同じく iframe へ埋め込んだ状態でゲームループが継続するかを確認するページ。
+  <p>配信時と同じく iframe へ埋め込んだ状態を確認するページ。
      枠内の ticks が増え続けていれば Update / Draw が動いている。</p>
+  <ul>
+    <li>枠内をタップして、指を置いた位置とマーカーが一致するか</li>
+    <li>ボタンを押したときに、押したボタンの動きが出るか</li>
+    <li>枠内を操作している間、このページ自体がスクロールしないか</li>
+  </ul>
+  <!-- 埋め込み側が sandbox を付ける前提で検証する。
+       allow-scripts が無いと WASM を起動できず、allow-same-origin が無いと
+       同一オリジンの main.wasm を fetch できない。この2つが必要最小限。 -->
   <div class="frame">
-    <iframe src="index.html" title="ぷゆもんコロシアム 155 Battle (PoC)"></iframe>
+    <iframe src="index.html"
+            title="ぷゆもんコロシアム 155 Battle (PoC)"
+            sandbox="allow-scripts allow-same-origin"></iframe>
+  </div>
+  <div class="scroll-probe">
+    <p>ここから下はスクロール確認用の余白。枠内の操作でページが動かないことを確かめる。</p>
+    <div></div>
+    <p>スクロール確認用の余白はここまで。</p>
   </div>
 </main>
 </body>

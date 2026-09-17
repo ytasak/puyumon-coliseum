@@ -7,6 +7,7 @@ package game
 
 import (
 	"fmt"
+	"image"
 	"image/color"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -42,12 +43,22 @@ type Game struct {
 	// Gameと同じ寿命で1つだけ持つ。
 	sprites *sprite.Renderer
 
-	// players はspriteDemosと同じ並びのanimation状態。
-	// キャラクター定義とは分けて持つ。
-	players []anim.Player
+	// player はキャラクターのanimation状態。キャラクター定義とは分けて持つ。
+	player anim.Player
 
 	// particles は表示中のEmoji particle。
 	particles anim.Particles
+
+	// tapCount はこれまでに受け取ったタップの数。
+	// 実機で入力が拾えているかを画面から確認するために数える。
+	tapCount int
+	// lastTap は最後にタップされた論理座標。
+	lastTap image.Point
+
+	// touchIDs, tapped は入力の取得に使い回すbuffer。
+	// 毎tick確保しないために保持する。
+	touchIDs []ebiten.TouchID
+	tapped   []image.Point
 }
 
 // 実装漏れをコンパイル時に検出する。
@@ -61,10 +72,7 @@ func New() (*Game, error) {
 	if err != nil {
 		return nil, fmt.Errorf("game: %w", err)
 	}
-	return &Game{
-		sprites: sprite.NewRenderer(emojis),
-		players: make([]anim.Player, len(spriteDemos)),
-	}, nil
+	return &Game{sprites: sprite.NewRenderer(emojis)}, nil
 }
 
 // Update はEbitengineのtickごとに呼ばれる。
@@ -95,7 +103,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 // この識別用テキストとは描画経路が別になっている。
 func (g *Game) overlayText() string {
 	return fmt.Sprintf(
-		"PUYUMON COLISEUM 155 BATTLE\nYTA-9 composite sprite animation PoC\nlogical %dx%d / ticks: %d",
-		LogicalWidth, LogicalHeight, g.ticks,
+		"PUYUMON COLISEUM 155 BATTLE\nYTA-10 mobile safari PoC\n"+
+			"logical %dx%d / fps %.1f tps %.1f / ticks: %d\ntaps: %d / last: (%d, %d)",
+		LogicalWidth, LogicalHeight, ebiten.ActualFPS(), ebiten.ActualTPS(), g.ticks,
+		g.tapCount, g.lastTap.X, g.lastTap.Y,
 	)
 }

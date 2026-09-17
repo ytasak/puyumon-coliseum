@@ -2,7 +2,9 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- user-scalable=no はページ側のpinch zoomを止める。
+     ゲームのcanvasとブラウザのzoomが取り合うと、tap座標の確認にならないため。 -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>ぷゆもんコロシアム 155 Battle (PoC)</title>
 <!-- favicon未設定による404を避ける。アイコンはPoCの範囲外。 -->
 <link rel="icon" href="data:,">
@@ -14,9 +16,16 @@
     height: 100%;
     overflow: hidden;
     background: #1b2438;
+    /* iOS Safariでtapのたびに出るhighlightと、長押しの選択を止める。 */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
   }
   canvas {
     display: block;
+    /* page scroll / pinch zoom へtouchを渡さない。
+       これが無いと、ゲームを操作したつもりでページが動く。 */
+    touch-action: none;
   }
   #status {
     position: absolute;
@@ -34,28 +43,63 @@
   #status[hidden] {
     display: none;
   }
+  /* 起動にかかった時間と転送量。実機での初回load時間を記録するために出す。 */
+  #boot {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    margin: 0;
+    color: #8b97a8;
+    font: 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    pointer-events: none;
+    white-space: pre;
+    text-align: right;
+  }
 </style>
 </head>
 <body>
 <div id="status">loading WebAssembly...</div>
+<pre id="boot"></pre>
 <script src="wasm_exec.js"></script>
 <script>
   const status = document.getElementById("status");
+  const boot = document.getElementById("boot");
 
   function fail(message) {
     status.hidden = false;
     status.textContent = "failed to start\n\n" + message;
   }
 
+  // 実機では console を見られないことがあるため、起動時のエラーも画面へ出す。
+  window.addEventListener("error", (e) => fail(String(e.message || e.error)));
+  window.addEventListener("unhandledrejection", (e) => fail(String(e.reason)));
+
   if (typeof Go !== "function") {
     fail("wasm_exec.js was not loaded.\nRun `make wasm` to copy it from GOROOT.");
   } else if (!WebAssembly.instantiateStreaming) {
     fail("this browser does not support WebAssembly.instantiateStreaming.");
   } else {
+    const startedAt = performance.now();
     const go = new Go();
+
     WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject)
       .then((result) => {
+        const readyAt = performance.now();
         status.hidden = true;
+
+        // 転送量はNavigation/Resource Timingから取る。取れない環境では省く。
+        const entry = performance.getEntriesByType("resource")
+          .find((e) => e.name.endsWith("main.wasm"));
+        const size = entry && entry.encodedBodySize
+          ? (entry.encodedBodySize / (1024 * 1024)).toFixed(1) + "MB over the wire"
+          : "transfer size unavailable";
+
+        boot.textContent =
+          "boot " + ((readyAt - startedAt) / 1000).toFixed(2) + "s / " + size +
+          "\ndpr " + (window.devicePixelRatio || 1) +
+          " / " + window.innerWidth + "x" + window.innerHeight +
+          (window.self === window.top ? "" : " / in iframe");
+
         return go.run(result.instance);
       })
       .catch((err) => {

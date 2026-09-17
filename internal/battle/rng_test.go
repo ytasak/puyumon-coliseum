@@ -28,6 +28,38 @@ func TestRandRepeatsSequenceForSameSeed(t *testing.T) {
 	}
 }
 
+// 乱数列そのものを固定する。実装を変えたときに、これまでの対戦が再現できなく
+// なったことへ気付けるようにする。
+//
+// seed=1の値はsplitmix64の原典が公表しているものと同じなので、
+// このtestは「自分の実装が原典どおりか」の確認にもなっている。
+func TestRandGoldenSequence(t *testing.T) {
+	t.Parallel()
+
+	wantUint64 := []uint64{
+		0x910a2dec89025cc1,
+		0xbeeb8da1658eec67,
+		0xf893a2eefb32555e,
+		0x71c18690ee42c90b,
+		0x71bb54d8d101b5b9,
+	}
+	r := NewRand(1)
+	for i, want := range wantUint64 {
+		if got := r.Uint64(); got != want {
+			t.Errorf("Uint64() draw %d = %#016x, want %#016x", i, got, want)
+		}
+	}
+
+	// Generation Iの乱数は1 byte単位で使うことが多いため、その範囲でも固定する。
+	wantIntN := []int{128, 84, 170, 44, 177, 95, 185, 135}
+	r = NewRand(155)
+	for i, want := range wantIntN {
+		if got := r.IntN(256); got != want {
+			t.Errorf("IntN(256) draw %d = %d, want %d", i, got, want)
+		}
+	}
+}
+
 // seedが違えば列も変わる。同じ値が並ぶようでは再現性の意味が無い。
 func TestRandDiffersBetweenSeeds(t *testing.T) {
 	t.Parallel()

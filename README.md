@@ -62,6 +62,10 @@ iframe へ埋め込んだ状態を確認する場合は <http://localhost:8080/i
 配信手順は [docs/wasm-delivery.md](docs/wasm-delivery.md)、サイズの内訳は
 [docs/emoji-rendering.md](docs/emoji-rendering.md) を参照。
 
+ロード中は受信量（`読み込み中... 2.4MB`）を出し、10 秒を超えたら注意書きを足す。
+失敗したときは理由と再読み込みボタンを出す。回線を絞った実測値と判断の根拠は
+[docs/loading-experience.md](docs/loading-experience.md) にある。
+
 ### 実機（iPhone Safari）
 
 同じ Wi-Fi にいる iPhone から開くには、LAN へ公開して配信する。
@@ -121,6 +125,7 @@ internal/sprite/            複数 Emoji を 1 体として定義・描画する
 internal/anim/              アニメーションの状態管理と Emoji particle
 docs/mobile-safari-poc.md   iPhone Safari / iframe 検証の手順と記録（YTA-10）
 docs/wasm-delivery.md       本番配信時の圧縮手順と実測サイズ（YTA-12）
+docs/loading-experience.md  初回ロード中の表示と、回線別のロード時間（YTA-13）
 internal/emoji/             Emoji 素材のフォント読み込みとセル画像のキャッシュ
 internal/emoji/assets/      同梱フォントと、その出典・ライセンス
 docs/emoji-rendering.md     カラー Emoji 描画の検証記録（YTA-7）
@@ -182,6 +187,9 @@ Linear に明示されていない箇所について、以下を採用した。�
 | 配信時のキャッシュ | `Cache-Control: no-store` | 再ビルドした `.wasm` が古いキャッシュのまま検証される事故を防ぐ |
 | 本番配信の圧縮 | `make dist` で事前圧縮した `.br` / `.gz` を生成し、配信側は `Content-Encoding` を付けて返す | brotli -q11 で 21.4 MB → 3.8 MB。21 MB の `.wasm` は CDN の自動圧縮のサイズ上限を超えやすく、事前圧縮のほうが確実。圧縮は配信の設定なのでゲーム側のコードは変えない |
 | `-ldflags="-s -w"` | 使わない | 圧縮後で 0.06 MB しか減らない一方、panic 時のシンボルを失う |
+| ロード中の表示 | テキストのみ。受信量と、10 秒を超えたときの注意書き | ローディング画面のアートワークは Out of scope。HTML 側で Emoji を出すと OS のフォントで描かれ、起動後の Twemoji と絵柄が変わる。揃えるには 1.4 MB のフォントを別に読ませることになり、待ち時間を減らす目的と逆を向く |
+| 受信量の取り方 | `fetch` した body を自前で数え、同じ内容を `instantiateStreaming` へ渡す | `instantiateStreaming` は受信量を教えてくれない。streaming のまま渡すので起動は遅くならない。圧縮配信では解凍後のバイト数になる（転送量は起動後に Resource Timing から出す） |
+| ロード失敗時 | 理由と再読み込みボタンを出す。自動リトライもタイムアウトによる中断もしない | 実機では console を見られないことがある。iframe 内ではブラウザの再読み込みが埋め込みページ全体に及ぶため、枠の中だけやり直せるようにする。遅いだけの回線を打ち切ると、あと少しで終わる読み込みを捨てることになる |
 | フォントのサブセット化 | 現時点では行わない | 使う Emoji が未確定で、`fonttools` をビルド依存に追加することになる。再検討の条件は [docs/wasm-delivery.md](docs/wasm-delivery.md) |
 
 ### 直接 dependency
@@ -206,6 +214,10 @@ pixel の読み出し（`Image.At`）ができないため、描画結果その�
 実際の見た目は Desktop 起動とブラウザでの目視確認で担保する。
 
 `cmd/serve` については、`.wasm` の Content-Type とキャッシュ無効化を `httptest` で検証している。
+
+ロード中の表示と失敗時の表示はゲーム本体が動く前の HTML / JS 側にあるため `go test` の対象外。
+回線を絞ったブラウザでの手動確認で担保しており、確認した内容は
+[docs/loading-experience.md](docs/loading-experience.md) に残している。
 
 Emoji についても色そのものは検証できないため、必須 Emoji が同梱フォントの
 単一カラーグリフへ解決されるところまでを自動テストで確認し、実際の色は目視確認で担保している。
@@ -234,5 +246,7 @@ PoC の結論は Go だが、本実装までに扱う必要がある点が残っ
 
 - **配信時の圧縮** — 手順は [docs/wasm-delivery.md](docs/wasm-delivery.md) で確定済み（brotli で 3.8 MB）。
   残るのは配信基盤の選定と、実配信での転送量の確認
-- **モバイル回線での初回ロード** — 実測は LAN のみ。ロード中の表示を含めて配信方法を決める段階で扱う
+- **モバイル回線での初回ロード** — ロード中の表示は実装済み（[docs/loading-experience.md](docs/loading-experience.md)）。
+  Chrome の throttling では Fast 4G 4.1 秒 / Slow 4G 22.8 秒。**実機のモバイル回線では未計測**で、
+  公開 HTTPS のエンドポイントが必要
 - ~~**縦持ちでの画面の使い方**~~ — YTA-11 で決着。横持ち前提を維持し、縦長で開かれたときは横持ちを促す

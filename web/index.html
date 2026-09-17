@@ -31,8 +31,10 @@
     position: absolute;
     inset: 0;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 12px;
     padding: 16px;
     box-sizing: border-box;
     color: #c8d2e0;
@@ -42,6 +44,29 @@
   }
   #status[hidden] {
     display: none;
+  }
+  #status p {
+    margin: 0;
+  }
+  /* 待たせている理由と、失敗したときの詳細。どちらも必要なときだけ出す。 */
+  #status-note {
+    max-width: 480px;
+    color: #8b97a8;
+    font-size: 12px;
+  }
+  #status-note[hidden],
+  #status-reload[hidden] {
+    display: none;
+  }
+  /* 実機で指で押せる大きさにする。iOSのタップ目標の下限が44px。 */
+  #status-reload {
+    min-height: 44px;
+    padding: 0 20px;
+    border: 1px solid #2c3a52;
+    border-radius: 4px;
+    background: #243049;
+    color: #c8d2e0;
+    font: inherit;
   }
   /* 起動にかかった時間と転送量。実機での初回load時間を記録するために出す。 */
   #boot {
@@ -58,53 +83,168 @@
 </style>
 </head>
 <body>
-<div id="status">loading WebAssembly...</div>
+<div id="status">
+  <p id="status-message">読み込み中...</p>
+  <p id="status-note" hidden></p>
+  <button id="status-reload" type="button" hidden>再読み込み</button>
+</div>
 <pre id="boot"></pre>
 <script src="wasm_exec.js"></script>
 <script>
   const status = document.getElementById("status");
+  const message = document.getElementById("status-message");
+  const note = document.getElementById("status-note");
+  const reload = document.getElementById("status-reload");
   const boot = document.getElementById("boot");
 
-  function fail(message) {
-    status.hidden = false;
-    status.textContent = "failed to start\n\n" + message;
+  // これを超えても終わらないときだけ、待たせている旨を追加で出す。
+  // 速い回線では出さない。出すと「遅い」と思わせるだけになるため。
+  const SLOW_NOTICE_MS = 10000;
+
+  // 受信済みバイト数と、受信が終わった時刻。boot表示とロード中表示の両方で使う。
+  const progress = { received: 0, doneAt: 0 };
+
+  // boot表示に出す計測値。転送量だけ遅れて届くので、揃った時点で書き直す。
+  const timing = { startedAt: 0, readyAt: 0, wire: 0 };
+
+  // 転送量はResource Timingから取るが、このentryはinstantiateの完了より
+  // あとに追加されることがある。起動直後に読むと取り逃すため、observerで待つ。
+  if (window.PerformanceObserver) {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.name.endsWith("main.wasm") && entry.encodedBodySize) {
+          timing.wire = entry.encodedBodySize;
+          renderBoot();
+        }
+      }
+    }).observe({ type: "resource", buffered: true });
   }
 
-  // 実機では console を見られないことがあるため、起動時のエラーも画面へ出す。
-  window.addEventListener("error", (e) => fail(String(e.message || e.error)));
-  window.addEventListener("unhandledrejection", (e) => fail(String(e.reason)));
+  let slowNotice = 0;
+
+  // 実機では console を見られないことがあるため、失敗の理由も画面へ出す。
+  function fail(reason) {
+    clearTimeout(slowNotice);
+    status.hidden = false;
+    message.textContent = "起動できませんでした";
+    note.textContent = String(reason);
+    note.hidden = false;
+    reload.hidden = false;
+  }
+
+  window.addEventListener("error", (e) => fail(e.message || e.error));
+  window.addEventListener("unhandledrejection", (e) => fail(e.reason));
+  reload.addEventListener("click", () => location.reload());
+
+  function megabytes(bytes) {
+    return (bytes / (1024 * 1024)).toFixed(1) + "MB";
+  }
+
+  function seconds(ms) {
+    return (ms / 1000).toFixed(2) + "s";
+  }
+
+  // 受信したバイト数を数えながら、そのままstreaming instantiateへ流す。
+  // WebAssembly.instantiateStreaming は受信量を教えてくれないので、
+  // bodyを自前で読んで数え直す。streamingのまま渡すので起動は遅くならない。
+  //
+  // ここで数えるのは解凍後のバイト数で、圧縮配信では転送量と一致しない。
+  // 転送量そのものは Resource Timing から取って boot 表示へ出す。
+  function counted(response, onProgress) {
+    const reader = response.body.getReader();
+    let received = 0;
+
+    const body = new ReadableStream({
+      async pull(controller) {
+        const { done, value } = await reader.read();
+        if (done) {
+          progress.doneAt = performance.now();
+          controller.close();
+          return;
+        }
+        received += value.byteLength;
+        progress.received = received;
+        onProgress(received);
+        controller.enqueue(value);
+      },
+      cancel(reason) {
+        return reader.cancel(reason);
+      },
+    });
+
+    // instantiateStreaming は Content-Type: application/wasm のResponseしか受け取らない。
+    return new Response(body, { headers: { "Content-Type": "application/wasm" } });
+  }
+
+  async function load() {
+    const response = await fetch("main.wasm");
+    if (!response.ok) {
+      throw new Error("main.wasm: HTTP " + response.status);
+    }
+
+    // Responseを作り直すと、Content-Typeの誤りをブラウザ側が検出できなくなる。
+    // 配信設定のミスを握りつぶさないよう、ここで自分で確かめる。
+    const type = response.headers.get("content-type") || "(none)";
+    if (!type.startsWith("application/wasm")) {
+      throw new Error("main.wasm: Content-Type is " + type + ", expected application/wasm");
+    }
+
+    if (!response.body) {
+      return response;
+    }
+    try {
+      return counted(response, (received) => {
+        message.textContent = "読み込み中... " + megabytes(received);
+      });
+    } catch (e) {
+      // streamからResponseを作れない環境では、受信量の表示だけ諦めて起動を優先する。
+      return response;
+    }
+  }
+
+  function renderBoot() {
+    if (!timing.readyAt) {
+      return;
+    }
+    const wire = timing.wire
+      ? megabytes(timing.wire) + " over the wire"
+      : "transfer size unavailable";
+    // 受信が終わった時刻が分かれば、待ち時間のうちダウンロードが占める分も出す。
+    const download = progress.doneAt
+      ? " (dl " + seconds(progress.doneAt - timing.startedAt) + ")"
+      : "";
+
+    boot.textContent =
+      "boot " + seconds(timing.readyAt - timing.startedAt) + download + " / " + wire +
+      "\ndpr " + (window.devicePixelRatio || 1) +
+      " / " + window.innerWidth + "x" + window.innerHeight +
+      (window.self === window.top ? "" : " / in iframe");
+  }
+
+  async function start() {
+    timing.startedAt = performance.now();
+    slowNotice = setTimeout(() => {
+      note.textContent = "回線によっては時間がかかります。そのままお待ちください。";
+      note.hidden = false;
+    }, SLOW_NOTICE_MS);
+
+    const go = new Go();
+    const result = await WebAssembly.instantiateStreaming(await load(), go.importObject);
+    timing.readyAt = performance.now();
+
+    clearTimeout(slowNotice);
+    status.hidden = true;
+    renderBoot();
+
+    return go.run(result.instance);
+  }
 
   if (typeof Go !== "function") {
     fail("wasm_exec.js was not loaded.\nRun `make wasm` to copy it from GOROOT.");
   } else if (!WebAssembly.instantiateStreaming) {
     fail("this browser does not support WebAssembly.instantiateStreaming.");
   } else {
-    const startedAt = performance.now();
-    const go = new Go();
-
-    WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject)
-      .then((result) => {
-        const readyAt = performance.now();
-        status.hidden = true;
-
-        // 転送量はNavigation/Resource Timingから取る。取れない環境では省く。
-        const entry = performance.getEntriesByType("resource")
-          .find((e) => e.name.endsWith("main.wasm"));
-        const size = entry && entry.encodedBodySize
-          ? (entry.encodedBodySize / (1024 * 1024)).toFixed(1) + "MB over the wire"
-          : "transfer size unavailable";
-
-        boot.textContent =
-          "boot " + ((readyAt - startedAt) / 1000).toFixed(2) + "s / " + size +
-          "\ndpr " + (window.devicePixelRatio || 1) +
-          " / " + window.innerWidth + "x" + window.innerHeight +
-          (window.self === window.top ? "" : " / in iframe");
-
-        return go.run(result.instance);
-      })
-      .catch((err) => {
-        fail(String(err));
-      });
+    start().catch(fail);
   }
 </script>
 </body>

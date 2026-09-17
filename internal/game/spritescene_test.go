@@ -1,6 +1,7 @@
 package game
 
 import (
+	"image"
 	"slices"
 	"testing"
 	"unicode"
@@ -8,16 +9,6 @@ import (
 	"github.com/ytasak/puyumon-coliseum/internal/anim"
 	"github.com/ytasak/puyumon-coliseum/internal/emoji"
 )
-
-func newEmojiSet(t *testing.T) *emoji.Set {
-	t.Helper()
-
-	set, err := emoji.New()
-	if err != nil {
-		t.Fatalf("emoji.New() returned error: %v", err)
-	}
-	return set
-}
 
 // ナッシー型はIssueが指定した素材（body 🌴 / faces 🥺 😫 🤪）で構成する。
 func TestNassyIsBuiltFromTheSpecifiedMaterials(t *testing.T) {
@@ -41,152 +32,163 @@ func TestNassyIsBuiltFromTheSpecifiedMaterials(t *testing.T) {
 }
 
 // 描画順はZの昇順で、bodyが最初（もっとも奥）に来る。
-func TestDemoCharactersAreOrderedByZ(t *testing.T) {
+func TestNassyIsOrderedByZ(t *testing.T) {
 	t.Parallel()
 
-	for _, demo := range spriteDemos {
-		t.Run(demo.label, func(t *testing.T) {
-			for i := 1; i < len(demo.character.Parts); i++ {
-				if prev, cur := demo.character.Parts[i-1].Z, demo.character.Parts[i].Z; prev > cur {
-					t.Errorf("part %d has Z=%d after Z=%d; parts must be ordered back to front", i, cur, prev)
-				}
-			}
-		})
-	}
-}
-
-// キャラクターにもparticleにも、同梱フォントでカラー描画できるEmojiだけを使う。
-func TestDemoEmojiUseColorGlyphs(t *testing.T) {
-	t.Parallel()
-
-	set := newEmojiSet(t)
-	for _, demo := range spriteDemos {
-		for _, p := range demo.character.Parts {
-			if !set.IsColorGlyph(p.Emoji) {
-				t.Errorf("%s: character part %q is not a color glyph", demo.label, p.Emoji)
-			}
-		}
-		if !set.IsColorGlyph(demo.particle) {
-			t.Errorf("%s: particle %q is not a color glyph", demo.label, demo.particle)
+	for i := 1; i < len(nassy.Parts); i++ {
+		if prev, cur := nassy.Parts[i-1].Z, nassy.Parts[i].Z; prev > cur {
+			t.Errorf("part %d has Z=%d after Z=%d; parts must be ordered back to front", i, cur, prev)
 		}
 	}
 }
 
-// Scaleが0の部品は見えない。定義の書き間違いを拾う。
-func TestDemoCharacterPartsHavePositiveScale(t *testing.T) {
+// 画面に出るEmojiはすべて同梱フォントでカラー描画できる必要がある。
+// 実機でEmojiが欠けたりmonochromeになったりしたときに、
+// フォント側の問題ではないと切り分けられるようにする。
+func TestSceneEmojiUseColorGlyphs(t *testing.T) {
 	t.Parallel()
 
-	for _, demo := range spriteDemos {
-		for _, p := range demo.character.Parts {
-			if p.Scale <= 0 {
-				t.Errorf("%s: part %q has Scale = %v, want > 0", demo.label, p.Emoji, p.Scale)
-			}
+	set, err := emoji.New()
+	if err != nil {
+		t.Fatalf("emoji.New() returned error: %v", err)
+	}
+
+	for _, p := range nassy.Parts {
+		if !set.IsColorGlyph(p.Emoji) {
+			t.Errorf("character part %q is not a color glyph", p.Emoji)
 		}
+	}
+	for _, action := range actions {
+		if !set.IsColorGlyph(action.particle) {
+			t.Errorf("%s: particle %q is not a color glyph", action.label, action.particle)
+		}
+	}
+	if !set.IsColorGlyph(idleParticle) {
+		t.Errorf("idle particle %q is not a color glyph", idleParticle)
 	}
 }
 
-// 画面でIdle / Attack / Hit / Emphasis のすべてを確認できる。
-func TestDemoCoversEveryAnimationPrimitive(t *testing.T) {
+// タップで Attack / Hit / Emphasis のすべてを発火できる。
+func TestActionsCoverEveryMotion(t *testing.T) {
 	t.Parallel()
 
-	var idleOnly bool
-	played := map[anim.Motion]bool{}
-	for _, demo := range spriteDemos {
-		if demo.playMotion {
-			played[demo.motion] = true
-		} else {
-			idleOnly = true
-		}
+	playable := map[anim.Motion]bool{}
+	for _, action := range actions {
+		playable[action.motion] = true
 	}
 
-	if !idleOnly {
-		t.Error("no demo shows the idle motion on its own")
-	}
 	for _, m := range []anim.Motion{anim.Attack, anim.Hit, anim.Emphasis} {
-		if !played[m] {
-			t.Errorf("no demo plays %v", m)
+		if !playable[m] {
+			t.Errorf("no action plays %v", m)
 		}
 	}
 }
 
 // particleにはIssueが指定した4種を使う。
-func TestDemoParticlesAreTheRequiredEmoji(t *testing.T) {
+func TestSceneParticlesAreTheRequiredEmoji(t *testing.T) {
 	t.Parallel()
 
-	var got []string
-	for _, demo := range spriteDemos {
-		got = append(got, demo.particle)
+	got := []string{idleParticle}
+	for _, action := range actions {
+		got = append(got, action.particle)
 	}
 	slices.Sort(got)
 
 	want := []string{"⚡", "❄️", "💥", "💤"}
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
-		t.Errorf("demo particles = %v, want %v", got, want)
+		t.Errorf("scene particles = %v, want %v", got, want)
 	}
 }
 
-// 各demoは1周期にちょうど1回、隣と重ならないタイミングで動き出す。
-func TestDemoTriggersAreStaggeredWithinOnePeriod(t *testing.T) {
+// タップ領域は画面内に収まり、互いに重ならない。
+// 重なっていると、どのactionが反応したのかで入力のずれを判断できなくなる。
+func TestActionRectsFitOnScreenAndDoNotOverlap(t *testing.T) {
 	t.Parallel()
 
-	counts := make([]int, len(spriteDemos))
-	for tick := uint64(0); tick < demoPeriod; tick++ {
-		triggered := 0
-		for i := range spriteDemos {
-			if demoTriggers(i, tick) {
-				counts[i]++
-				triggered++
+	screen := image.Rect(0, 0, LogicalWidth, LogicalHeight)
+	for i, action := range actions {
+		if !action.rect.In(screen) {
+			t.Errorf("%s: rect %v is outside the logical screen %v", action.label, action.rect, screen)
+		}
+		for _, other := range actions[i+1:] {
+			if action.rect.Overlaps(other.rect) {
+				t.Errorf("%s and %s overlap: %v, %v", action.label, other.label, action.rect, other.rect)
 			}
-		}
-		if triggered > 1 {
-			t.Errorf("tick %d triggers %d demos at once; they should be staggered", tick, triggered)
-		}
-	}
-
-	for i, got := range counts {
-		if got != 1 {
-			t.Errorf("demo %q triggered %d times per period, want 1", spriteDemos[i].label, got)
 		}
 	}
 }
 
-// ゲームループを回すとparticleが出て、寿命が尽きた分は消える。
-func TestUpdateSpawnsAndRetiresParticles(t *testing.T) {
+// タップ領域は実機の指で押せる大きさを確保する。
+func TestActionRectsAreLargeEnoughToTap(t *testing.T) {
+	t.Parallel()
+
+	// 論理座標での最小の一辺。実機では画面幅へ引き伸ばされるため、
+	// これを下回らなければ指で押せる。
+	const minSide = 44
+
+	for _, action := range actions {
+		if action.rect.Dx() < minSide || action.rect.Dy() < minSide {
+			t.Errorf("%s: rect %v is smaller than %dx%d", action.label, action.rect, minSide, minSide)
+		}
+	}
+}
+
+// タップ位置の判定は領域の中だけで当たる。
+func TestActionAtMatchesOnlyItsOwnRect(t *testing.T) {
+	t.Parallel()
+
+	for want, action := range actions {
+		center := image.Pt(
+			action.rect.Min.X+action.rect.Dx()/2,
+			action.rect.Min.Y+action.rect.Dy()/2,
+		)
+		got, ok := actionAt(center)
+		if !ok || got != want {
+			t.Errorf("actionAt(center of %s) = (%d, %v), want (%d, true)", action.label, got, ok, want)
+		}
+	}
+
+	// キャラクターの位置はどのタップ領域にも当たらない。
+	if _, ok := actionAt(image.Pt(characterX, characterY)); ok {
+		t.Error("the character position falls inside an action rect")
+	}
+}
+
+// 操作しなくても待機のparticleが出て、寿命が尽きた分は消える。
+// 実機で「止まっているのか動いているのか」を判断する手掛かりになる。
+func TestIdleParticlesAppearWithoutInput(t *testing.T) {
 	t.Parallel()
 
 	g := newGame(t)
-	if got := g.particles.Len(); got != 0 {
-		t.Fatalf("particles before the first update = %d, want 0", got)
-	}
 
 	var spawned bool
-	for i := 0; i < demoPeriod*4; i++ {
+	for i := 0; i < idleParticlePeriod*3; i++ {
 		if err := g.Update(); err != nil {
 			t.Fatalf("Update() returned error: %v", err)
 		}
 		if g.particles.Len() > 0 {
 			spawned = true
 		}
-		if got, limit := g.particles.Len(), len(spriteDemos); got > limit {
+		if got, limit := g.particles.Len(), 2; got > limit {
 			t.Fatalf("tick %d: %d particles alive, want at most %d; they are not being retired", i, got, limit)
 		}
 	}
 
 	if !spawned {
-		t.Error("no particle was ever spawned")
+		t.Error("no idle particle was ever spawned")
 	}
 }
 
 // 画面のラベルはebitenutil.DebugPrintAtの組み込みASCIIフォントで描くため、
 // 非ASCII文字が混ざると表示できない。
-func TestSceneLabelsAreASCIIOnly(t *testing.T) {
+func TestActionLabelsAreASCIIOnly(t *testing.T) {
 	t.Parallel()
 
-	for _, demo := range spriteDemos {
-		for _, r := range demo.label {
+	for _, action := range actions {
+		for _, r := range action.label {
 			if r > unicode.MaxASCII {
-				t.Errorf("label %q contains non-ASCII rune %q", demo.label, r)
+				t.Errorf("label %q contains non-ASCII rune %q", action.label, r)
 			}
 		}
 	}

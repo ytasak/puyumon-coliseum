@@ -1,8 +1,12 @@
 package game
 
 import (
+	"image"
+	"image/color"
+
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
+	"github.com/hajimehoshi/ebiten/v2/vector"
 
 	"github.com/ytasak/puyumon-coliseum/internal/anim"
 	"github.com/ytasak/puyumon-coliseum/internal/sprite"
@@ -20,91 +24,126 @@ var nassy = sprite.NewCharacter(
 	sprite.Part{Emoji: "🤪", X: 0.25, Y: -0.17, Scale: 0.32, Rotation: 0.15, Z: 1},
 )
 
-// whale は2体目のPoCキャラクター。
+// actions は画面下のタップ領域。タップでanimationとparticleを発火する。
 //
-// 新しいキャラクターの追加が定義だけで済み、専用の描画コードもanimation側の
-// 分岐も必要としないことを画面で確かめるために置いている。デザインは未確定。
-var whale = sprite.NewCharacter(
-	sprite.Part{Emoji: "🐋", X: 0, Y: 0, Scale: 1, Z: 0},
-	sprite.Part{Emoji: "😫", X: -0.20, Y: 0.04, Scale: 0.24, Z: 1},
-	sprite.Part{Emoji: "⭐", X: 0.20, Y: -0.22, Scale: 0.26, Rotation: 0.3, Z: 1},
-)
-
-// spriteDemos は画面へ並べるキャラクターと、そこで繰り返し見せるanimation。
-//
-// animation primitiveがキャラクターに依存しないことを見比べられるよう、
-// ナッシー型とクジラ型を混ぜている。
-var spriteDemos = []struct {
-	label     string
-	character sprite.Character
-	// motion は周期的に再生する単発animation。
-	// playMotionがfalseなら待機の動きだけを見せる。
-	motion     anim.Motion
-	playMotion bool
-	// particle はanimationに合わせて出すEmoji。
+// Emojiが欠損しないかを実機で見分けられるよう、particleは種類を分けている。
+var actions = []struct {
+	label    string
+	rect     image.Rectangle
+	motion   anim.Motion
 	particle string
-	x        float64
 }{
-	{label: "idle", character: nassy, particle: "💤", x: 80},
-	{label: "attack", character: whale, motion: anim.Attack, playMotion: true, particle: "⚡", x: 240},
-	{label: "hit", character: nassy, motion: anim.Hit, playMotion: true, particle: "💥", x: 400},
-	{label: "emphasis", character: whale, motion: anim.Emphasis, playMotion: true, particle: "❄️", x: 560},
+	{label: "ATTACK", rect: image.Rect(24, 272, 208, 336), motion: anim.Attack, particle: "⚡"},
+	{label: "HIT", rect: image.Rect(228, 272, 412, 336), motion: anim.Hit, particle: "💥"},
+	{label: "EMPHASIS", rect: image.Rect(432, 272, 616, 336), motion: anim.Emphasis, particle: "❄️"},
 }
 
-// PoC sceneのレイアウトと進行（論理座標 / tick）。
-const (
-	// characterScale は character-local 座標1.0あたりのpixel数。
-	characterScale  = 76
-	charactersY     = 190
-	characterLabelY = 246
+// idleParticle は待機中に自動で出るEmoji。操作しなくても描画が動いていることが分かる。
+const idleParticle = "💤"
 
-	particleSpawnY = 150
+// PoC sceneのレイアウト（論理座標 / tick）。
+const (
+	characterX     = 320
+	characterY     = 158
+	characterScale = 104
+
+	particleSpawnY = 112
 	particleSize   = 30
 
-	// demoPeriod は1体が次にanimationを始めるまでのtick数。
-	demoPeriod = 90
-	// demoStagger は隣どうしが同時に動かないようずらすtick数。
-	demoStagger = 22
+	// idleParticlePeriod は待機中にparticleを出す間隔。
+	idleParticlePeriod = anim.TPS * 2
+
+	// tapMarkerRadius はタップ位置に出す印の大きさ。
+	tapMarkerRadius = 10
+	// tapMarkerReach は印から伸ばす十字線の長さ。
+	tapMarkerReach = tapMarkerRadius + 5
 
 	// debugFontCharWidth はebitenutil.DebugPrintAtが使う組み込みフォントの
-	// 1文字分の幅。ラベルを中央揃えするために使う。
-	debugFontCharWidth = 6
+	// 1文字分の幅と高さ。ラベルを中央揃えするために使う。
+	debugFontCharWidth  = 6
+	debugFontCharHeight = 16
 )
 
-// demoTriggers はindex番目のdemoがこのtickでanimationを始めるかを返す。
-func demoTriggers(index int, ticks uint64) bool {
-	return ticks%demoPeriod == uint64(index)*demoStagger%demoPeriod
+var (
+	buttonFillColor   = color.RGBA{R: 0x2c, G: 0x3a, B: 0x52, A: 0xff}
+	buttonBorderColor = color.RGBA{R: 0x5a, G: 0x6e, B: 0x90, A: 0xff}
+	// tapMarkerColor はタップ位置の印。背景ともキャラクターとも紛れない色にする。
+	tapMarkerColor = color.RGBA{R: 0xff, G: 0xd0, B: 0x4a, A: 0xff}
+)
+
+// actionAt はpに重なるタップ領域を返す。どこにも当たらなければokがfalse。
+func actionAt(p image.Point) (int, bool) {
+	for i, action := range actions {
+		if p.In(action.rect) {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
-// updateSpriteDemo はanimationの状態だけを進める。描画は行わない。
+// updateSpriteDemo は入力を受けてanimationの状態を進める。描画は行わない。
 func (g *Game) updateSpriteDemo(ticks uint64) {
-	for i := range spriteDemos {
-		demo := &spriteDemos[i]
+	for _, tap := range g.taps() {
+		g.tapCount++
+		g.lastTap = tap
 
-		if demoTriggers(i, ticks) {
-			if demo.playMotion {
-				g.players[i].Play(demo.motion)
-			}
-			g.particles.Spawn(demo.particle, demo.x, particleSpawnY, particleSize)
+		if i, ok := actionAt(tap); ok {
+			g.player.Play(actions[i].motion)
+			g.particles.Spawn(actions[i].particle, characterX, particleSpawnY, particleSize)
 		}
-		g.players[i].Update()
 	}
+
+	if ticks%idleParticlePeriod == 0 {
+		g.particles.Spawn(idleParticle, characterX, particleSpawnY, particleSize)
+	}
+
+	g.player.Update()
 	g.particles.Update()
 }
 
-// drawSpritePoC はキャラクターとparticleを描く。状態は変更しない。
+// drawSpritePoC はキャラクター・particle・操作用のボタン・タップ位置を描く。
 func (g *Game) drawSpritePoC(screen *ebiten.Image) {
-	for i, demo := range spriteDemos {
-		base := sprite.Transform{X: demo.x, Y: charactersY, Scale: characterScale}
-		g.sprites.Draw(screen, demo.character, g.players[i].Transform(base))
-		drawCenteredLabel(screen, demo.label, demo.x, characterLabelY)
-	}
+	base := sprite.Transform{X: characterX, Y: characterY, Scale: characterScale}
+	g.sprites.Draw(screen, nassy, g.player.Transform(base))
 
 	// particleはキャラクターより手前に出す。
 	for i := range g.particles.Len() {
 		character, transform := g.particles.At(i)
 		g.sprites.Draw(screen, character, transform)
 	}
+
+	g.drawActions(screen)
+	g.drawTapMarker(screen)
+}
+
+// drawActions はタップ領域を枠付きで描く。
+// 枠が見えていれば、どこを押したつもりかとどこが反応したかを突き合わせられる。
+func (g *Game) drawActions(screen *ebiten.Image) {
+	for _, action := range actions {
+		r := action.rect
+		x, y := float32(r.Min.X), float32(r.Min.Y)
+		w, h := float32(r.Dx()), float32(r.Dy())
+
+		vector.DrawFilledRect(screen, x, y, w, h, buttonFillColor, false)
+		vector.StrokeRect(screen, x, y, w, h, 1, buttonBorderColor, false)
+		drawCenteredLabel(screen, action.label,
+			float64(r.Min.X+r.Dx()/2), r.Min.Y+r.Dy()/2-debugFontCharHeight/2)
+	}
+}
+
+// drawTapMarker は最後にタップした位置へ印を出す。
+//
+// 指を置いた場所と印がずれていれば、論理座標への変換が合っていない。
+// iframeやdevicePixelRatioの影響を実機で切り分けるための手掛かりになる。
+func (g *Game) drawTapMarker(screen *ebiten.Image) {
+	if g.tapCount == 0 {
+		return
+	}
+
+	x, y := float32(g.lastTap.X), float32(g.lastTap.Y)
+	vector.StrokeCircle(screen, x, y, tapMarkerRadius, 2, tapMarkerColor, true)
+	vector.StrokeLine(screen, x-tapMarkerReach, y, x+tapMarkerReach, y, 1, tapMarkerColor, true)
+	vector.StrokeLine(screen, x, y-tapMarkerReach, x, y+tapMarkerReach, 1, tapMarkerColor, true)
 }
 
 // drawCenteredLabel はASCIIラベルをcenterXの中央揃えで描く。

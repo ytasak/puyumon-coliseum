@@ -3,6 +3,7 @@
 /dist/
 *.wasm
 *.exe
+web/wasm_exec.js
 
 # Go
 *.test

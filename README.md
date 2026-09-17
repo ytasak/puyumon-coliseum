@@ -128,7 +128,7 @@ internal/game/spritescene.go PoC の画面構成、キャラクター定義、�
 internal/game/input.go      マウス / タッチの取得
 internal/sprite/            複数 Emoji を 1 体として定義・描画する Composite Sprite 層
 internal/anim/              アニメーションの状態管理と Emoji particle
-internal/battle/            Battle Engine の domain model・タイプ相性・seeded RNG（UI 非依存）
+internal/battle/            Battle Engine の domain model・タイプ相性・ダメージ計算・seeded RNG（UI 非依存）
 docs/mobile-safari-poc.md   iPhone Safari / iframe 検証の手順と記録（YTA-10）
 docs/wasm-delivery.md       本番配信時の圧縮手順と実測サイズ（YTA-12）
 docs/loading-experience.md  初回ロード中の表示と、回線別のロード時間（YTA-13）
@@ -205,6 +205,12 @@ Linear に明示されていない箇所について、以下を採用した。�
 | 乱数 | splitmix64 を自前実装し、`RNG` interface で注入する | 生成列をこのリポジトリのコードだけで固定する。標準ライブラリの版差で golden test が壊れるのを避ける。global state に依存しないので、同じ seed から必ず同じ対戦を再現できる |
 | 乱数を状態に含めるか | 含めない。`BattleState` は値として複製できる pure な状態のままにする | 状態を複製しても乱数列が分岐しない。seed の管理は resolver 側の責務になる |
 | キャラクター・技の参照 | `SpeciesID` / `MoveID` という識別子だけを持つ | 実データの定義は後続 Issue の範囲。domain 側がキャラクター名で分岐しない構造を最初から守る |
+| Gen I のダメージ計算 | 出荷 ROM と同じ順序で整数演算する。相性は合成値を一度に掛けず、防御側のタイプごとに順に適用する | 掛ける順序と切り捨ての位置が変わると結果が変わる。期待値は pokered の `engine/battle/core.asm` から起こした別実装（Python）で独立に求め、golden test として固定した |
+| 急所 | base Speed 依存。通常技は `floor(base Speed / 2)`、高急所技はその 8 倍で 255 頭打ち。急所時は能力変化を無視し、Level を 2 倍にして計算する | 現代世代の固定確率ではない。base Speed は species データ側から渡す |
+| 能力値が 255 を超えたとき | 攻守とも 1/4 にしてから計算する | Gen I が 1 byte へ収めるための処理。能力を上げたときの結果に影響するので落とせない |
+| 防御側の能力値が 0 のとき | 1 として扱う | 実機は 0 除算で停止する。フリーズは再現できないため最小値で代替する |
+| 1/256 miss | 再現しない。命中率が最大（255）なら必中 | Issue の指示。再現する場合は Battle Rules Specification を先に更新する |
+| 乱数の消費数 | 命中判定もダメージ乱数も、結果によらず常に 1 つ消費する | ROM と bit 互換ではないので、消費数を一定にして追いやすさを優先した |
 | Gen I のタイプ相性 | 出荷 ROM と同じ 82 エントリをデータとして持ち、表に無い組み合わせは等倍 | 現代世代の知識で「直して」しまう事故を防ぐ。データは [pokered](https://github.com/pret/pokered) の `data/types/type_matchups.asm` と突き合わせた。後の世代で変わった相性は個別の test でも固定している |
 | ゴースト技 → エスパー | 0×（効かない）。出荷されたとおり | 本来は効果ばつぐんの意図だったとされる実装ミスだが、初代の対戦を決定づけた挙動のため維持する。Product Owner 判断 |
 | 相性倍率の持ち方 | 100 を等倍とする整数 | 0.25 / 0.5 / 2 / 4 を誤差なく扱える。ただし Gen I はダメージへ防御側のタイプごとに掛けて都度切り捨てるため、ダメージ計算では合成値ではなく `Against` をタイプごとに使う |

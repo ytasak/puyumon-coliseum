@@ -39,6 +39,17 @@
     border-radius: 4px;
     overflow: hidden;
   }
+  /* 縦長の枠。横持ちを促す画面が出ることを確認するために置く。
+     実機では端末を縦にしたモバイル全画面がこれに近い形になる。 */
+  .frame.portrait {
+    max-width: 280px;
+    aspect-ratio: 9 / 16;
+  }
+  h2 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 32px 0 8px;
+  }
   iframe {
     display: block;
     width: 100%;
@@ -69,6 +80,8 @@
     <li>ボタンを押したときに、押したボタンの動きが出るか</li>
     <li>枠内を操作している間、このページ自体がスクロールしないか</li>
   </ul>
+  <h2>landscape frame</h2>
+  <p>横長の枠へ埋め込んだ場合。ゲーム画面がそのまま出る。</p>
   <!-- 埋め込み側が sandbox を付ける前提で検証する。
        allow-scripts が無いと WASM を起動できず、allow-same-origin が無いと
        同一オリジンの main.wasm を fetch できない。この2つが必要最小限。 -->
@@ -77,6 +90,15 @@
             title="ぷゆもんコロシアム 155 Battle (PoC)"
             sandbox="allow-scripts allow-same-origin"></iframe>
   </div>
+  <h2>portrait frame</h2>
+  <p>縦長の枠へ埋め込んだ場合。<strong>横持ちを促す画面</strong>が出れば正しい。
+     ゲーム画面がそのまま縮んで出ていたら、向きの判定が効いていない。</p>
+  <div class="frame portrait">
+    <iframe src="index.html"
+            title="ぷゆもんコロシアム 155 Battle (PoC) - portrait"
+            sandbox="allow-scripts allow-same-origin"></iframe>
+  </div>
+
   <div class="scroll-probe">
     <p>ここから下はスクロール確認用の余白。枠内の操作でページが動かないことを確かめる。</p>
     <div></div>

@@ -13,6 +13,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 
 	"github.com/ytasak/puyumon-coliseum/internal/emoji"
+	"github.com/ytasak/puyumon-coliseum/internal/sprite"
 )
 
 // WindowTitle はDesktop起動時のウィンドウタイトル。
@@ -30,15 +31,15 @@ const (
 
 // Game は ebiten.Game の実装。
 //
-// 現時点ではEmoji描画PoCの状態しか持たない。
+// 現時点ではComposite Sprite PoCの状態しか持たない。
 type Game struct {
 	// ticks は Update が呼ばれた回数。ゲームループが継続動作していることを
 	// 画面とtestの双方から観測できるようにするために保持する。
 	ticks uint64
 
-	// emojis はEmoji素材のセル画像を供給する。生成済みのセルを保持するため、
+	// sprites はCharacterを描画する。Emoji素材のセル画像を内部で使い回すため、
 	// Gameと同じ寿命で1つだけ持つ。
-	emojis *emoji.Set
+	sprites *sprite.Renderer
 }
 
 // 実装漏れをコンパイル時に検出する。
@@ -52,7 +53,7 @@ func New() (*Game, error) {
 	if err != nil {
 		return nil, fmt.Errorf("game: %w", err)
 	}
-	return &Game{emojis: emojis}, nil
+	return &Game{sprites: sprite.NewRenderer(emojis)}, nil
 }
 
 // Update はEbitengineのtickごとに呼ばれる。
@@ -69,7 +70,7 @@ func (g *Game) Ticks() uint64 {
 // Draw は1フレーム分の描画を行う。
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Fill(backgroundColor)
-	g.drawEmojiPoC(screen)
+	g.drawSpritePoC(screen)
 	ebitenutil.DebugPrintAt(screen, g.overlayText(), overlayTextOriginX, overlayTextOriginY)
 }
 
@@ -80,7 +81,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 // この識別用テキストとは描画経路が別になっている。
 func (g *Game) overlayText() string {
 	return fmt.Sprintf(
-		"PUYUMON COLISEUM 155 BATTLE\nYTA-7 color emoji PoC / Twemoji Mozilla COLRv0\nlogical %dx%d / cell %dpx / ticks: %d",
-		LogicalWidth, LogicalHeight, emoji.CellSize, g.ticks,
+		"PUYUMON COLISEUM 155 BATTLE\nYTA-8 composite emoji sprite PoC\nlogical %dx%d / ticks: %d",
+		LogicalWidth, LogicalHeight, g.ticks,
 	)
 }

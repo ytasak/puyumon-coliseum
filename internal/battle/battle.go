@@ -169,6 +169,19 @@ func NewBattleState(team1, team2 [TeamSize]Pokemon) (BattleState, error) {
 	return state, nil
 }
 
+// NeedsReplacement は場に出ているPokemonが戦闘不能で、
+// 次のactiveを選び直す必要があるかを返す。
+//
+// 対戦が終わっている場合と、控えに戦えるPokemonが残っていない場合はfalse。
+// この状態では通常のturnを進められず、交代だけを受け付ける。
+func (b *BattleState) NeedsReplacement(side Side) bool {
+	if b.Status != Ongoing || !side.valid() {
+		return false
+	}
+	player := b.Players[side]
+	return player.Team[player.Active].Fainted() && len(player.Reserve()) > 0
+}
+
 // Validate は状態が取り得ない値を含んでいないかを確かめる。
 //
 // ここで見るのは「その値が状態として成立するか」だけで、

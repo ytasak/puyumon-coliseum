@@ -85,6 +85,35 @@ type Fainted struct {
 
 func (Fainted) event() {}
 
+// MoveMissed は技が外れたこと。
+type MoveMissed struct {
+	// Side は技を使った側。
+	Side Side
+}
+
+func (MoveMissed) event() {}
+
+// Unaffected はタイプ相性で技が通らなかったこと。
+//
+// 外れたのとは区別する。相性で通らない場合、命中していても効果がない。
+// 相性の倍率を表す NoEffect とは別物で、こちらはturnの出来事を表す。
+type Unaffected struct {
+	// Side は技を使った側。
+	Side Side
+}
+
+func (Unaffected) event() {}
+
+// ActionBlocked は状態異常で行動できなかったこと。
+type ActionBlocked struct {
+	// Side は行動できなかった側。
+	Side Side
+	// Reason は妨げた理由。
+	Reason StatusBlock
+}
+
+func (ActionBlocked) event() {}
+
 // Recharge は反動でそのturnに行動できなかったこと。
 type Recharge struct {
 	// Side は行動できなかった側。

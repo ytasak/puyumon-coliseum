@@ -129,6 +129,7 @@ internal/game/input.go      マウス / タッチの取得
 internal/sprite/            複数 Emoji を 1 体として定義・描画する Composite Sprite 層
 internal/anim/              アニメーションの状態管理と Emoji particle
 internal/battle/            Battle Engine。domain model・タイプ相性・ダメージ・状態異常・turn resolver（UI 非依存）
+internal/roster/            6 キャラクターと固定 move set のデータ（UI 非依存）
 docs/mobile-safari-poc.md   iPhone Safari / iframe 検証の手順と記録（YTA-10）
 docs/wasm-delivery.md       本番配信時の圧縮手順と実測サイズ（YTA-12）
 docs/loading-experience.md  初回ロード中の表示と、回線別のロード時間（YTA-13）
@@ -160,6 +161,9 @@ platform 固有の処理（ウィンドウ設定・HTTP 配信・ブラウザ bo
 キャラクターや技は識別子（`SpeciesID` / `MoveID`）で参照するだけで、domain 側にキャラクター固有の分岐を持たせない。
 タイプ相性のようなゲーム定義はデータとして持ち、ロジックはそれを解釈するだけにしている。
 1 turn の解決は `Resolver` が担い、状態・行動・乱数から次の状態と Event 列を返す。UI は呼ばない。
+
+`internal/roster` は「誰がどんな技を持つか」というゲーム定義だけを持ち、ルールは持たない。
+`battle.Data` へ変換して engine へ渡すので、キャラクターや技が増えても engine のコードは変わらない。
 
 `internal/anim` はアニメーションの**状態**だけを持ち、キャラクター定義も base transform も持たない。
 描画に使う transform は毎回 base から計算し直すため、再生を繰り返してもずれが蓄積しない。
@@ -206,6 +210,10 @@ Linear に明示されていない箇所について、以下を採用した。�
 | 乱数 | splitmix64 を自前実装し、`RNG` interface で注入する | 生成列をこのリポジトリのコードだけで固定する。標準ライブラリの版差で golden test が壊れるのを避ける。global state に依存しないので、同じ seed から必ず同じ対戦を再現できる |
 | 乱数を状態に含めるか | 含めない。`BattleState` は値として複製できる pure な状態のままにする | 状態を複製しても乱数列が分岐しない。seed の管理は resolver 側の責務になる |
 | キャラクター・技の参照 | `SpeciesID` / `MoveID` という識別子だけを持つ | 実データの定義は後続 Issue の範囲。domain 側がキャラクター名で分岐しない構造を最初から守る |
+| キャラクター・技のデータ | `internal/roster` に置き、`battle.Data` へ変換して渡す | engine はデータを解釈するだけにする。実データを engine 側へ置かない |
+| 能力値の求め方 | Gen I の式。**DV 15・stat exp 最大で固定** | 全キャラがテンプレートなので個体差を持たない。同じ種族値と Level から必ず同じ実数値になる。個体差を入れるなら引数を足す |
+| 155 のレベル配分 | 配布された 3 体へ、強い順に **50 / 50 / 55** | どの組み合わせでも合計 155 に収まる。Product Owner 判断（Linear の YTA-20 が正） |
+| 公開表示名 | 内部 ID だけ確定し、`DisplayName` は空のまま | IP 方針。データ構造で分離してあるので、あとから表示名を入れられる |
 | turn の解決 | `ResolveTurn` が state / Action / RNG から次の状態と Event 列を返す。UI を呼ばない | 仕様書の方向性どおり。進行順は Linear の YTA-18 に書いた turn pipeline が正 |
 | 技・キャラクターのデータ | `Data` struct を外から渡し、engine は定義の形だけを持つ | 実データは別 Issue の範囲。実装が 1 つしかない段階で interface を切らない方針に従った |
 | replacement の表現 | 状態に専用フラグを置かず、`NeedsReplacement` で導出する。解決は `ResolveReplacement` で、turn は進めない | 「active が戦闘不能かつ控えが残っている」ことから決まるので、状態を二重に持たない |

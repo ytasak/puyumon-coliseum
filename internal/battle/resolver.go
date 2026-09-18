@@ -275,13 +275,12 @@ func (r *Resolver) takeTurn(state *BattleState, side Side, action MoveAction) ([
 		selfDestruct(attacker)
 	}
 
-	defender := state.Players[side.Opponent()].ActivePokemon()
-	if !Hits(r.RNG, move.Accuracy, attacker.Stages.Accuracy, defender.Stages.Evasion) {
-		events = append(events, MoveMissed{Side: side})
-		return r.endTurn(state, side, events, exploded), nil
-	}
-
 	if move.Power > 0 {
+		if !r.hits(state, side, move) {
+			events = append(events, MoveMissed{Side: side})
+			return r.endTurn(state, side, events, exploded), nil
+		}
+
 		hit, damage, fainted, err := r.strike(state, side, move)
 		if err != nil {
 			return nil, err
@@ -299,6 +298,8 @@ func (r *Resolver) takeTurn(state *BattleState, side Side, action MoveAction) ([
 			events = append(events, r.applySideEffect(state, side, move, defenderTyping)...)
 		}
 	} else {
+		// 威力0の技は命中判定も効果の側で行う。実機は効果ごとに判定の有無と
+		// 順序が違い、反動中の相手を眠らせる場合のように判定しないものもある。
 		events = append(events, r.applyMoveEffect(state, side, move, defenderTyping)...)
 	}
 
@@ -320,6 +321,14 @@ func (r *Resolver) endTurn(state *BattleState, side Side, events []Event, explod
 		return events
 	}
 	return append(events, r.residual(state, side)...)
+}
+
+// hits は命中判定を行う。
+func (r *Resolver) hits(state *BattleState, side Side, move Move) bool {
+	attacker := state.Players[side].ActivePokemon()
+	defender := state.Players[side.Opponent()].ActivePokemon()
+
+	return Hits(r.RNG, move.Accuracy, attacker.Stages.Accuracy, defender.Stages.Evasion)
 }
 
 // typing は場に出ているPokemonのタイプ構成を返す。

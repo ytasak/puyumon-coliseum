@@ -82,11 +82,20 @@ func (r *Resolver) applyMoveEffect(state *BattleState, side Side, move Move, def
 
 	switch move.Effect {
 	case EffectParalyze:
-		// 確定のまひ。タイプ相性で通らない相手には効かない（でんき技とじめんタイプ）。
+		defender := state.Players[defenderSide].ActivePokemon()
+
+		// 実機は「すでに状態異常か → タイプで無効か → 命中判定」の順に見る。
+		// 先に弾かれた場合は命中の乱数を引かない。
+		if defender.Status != NoStatus {
+			return []Event{MoveFailed{Side: side}}
+		}
 		if AgainstTyping(move.Type, defenderTyping) == NoEffect {
+			// でんき技はじめんタイプへ効かない。
 			return []Event{Unaffected{Side: side}}
 		}
-		defender := state.Players[defenderSide].ActivePokemon()
+		if !r.hits(state, side, move) {
+			return []Event{MoveMissed{Side: side}}
+		}
 		if !ApplyStatus(r.RNG, defender, Paralysis) {
 			return []Event{MoveFailed{Side: side}}
 		}
@@ -95,12 +104,22 @@ func (r *Resolver) applyMoveEffect(state *BattleState, side Side, move Move, def
 	case EffectSleep:
 		defender := state.Players[defenderSide].ActivePokemon()
 
-		// Generation Iは、相手が反動で動けない状態のとき、すでに状態異常を持っていても
-		// 上書きして眠らせる。
 		if defender.Recharging {
+			// Generation Iは、相手が反動で動けない状態のとき、
+			// **状態異常の確認も命中判定もせずに**眠らせる。すでに別の状態異常を
+			// 持っていても上書きする。
 			defender.Recharging = false
 			defender.Status = NoStatus
 			defender.SleepTurns = 0
+		} else {
+			// 通常は「すでに状態異常か → 命中判定」の順。
+			// 状態異常持ちで弾かれた場合は命中の乱数を引かない。
+			if defender.Status != NoStatus {
+				return []Event{MoveFailed{Side: side}}
+			}
+			if !r.hits(state, side, move) {
+				return []Event{MoveMissed{Side: side}}
+			}
 		}
 		if !ApplyStatus(r.RNG, defender, Sleep) {
 			return []Event{MoveFailed{Side: side}}
@@ -108,6 +127,7 @@ func (r *Resolver) applyMoveEffect(state *BattleState, side Side, move Move, def
 		return []Event{StatusApplied{Side: defenderSide, Status: Sleep}}
 
 	case EffectHeal:
+		// 回復・Rest・能力上昇は実機も命中判定を行わない。乱数も引かない。
 		user := state.Players[side].ActivePokemon()
 		healed := heal(user, user.Stats.HP/2)
 		if healed == 0 {

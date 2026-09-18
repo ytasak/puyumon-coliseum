@@ -307,6 +307,40 @@ func TestGuaranteedParalyzeFailsOnStatusedTarget(t *testing.T) {
 	})
 }
 
+// 先に弾かれる場合、命中の乱数を引かない。実機も条件を先に見る。
+func TestGuaranteedParalyzeSkipsTheAccuracyRollWhenItCannotApply(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		defender Pokemon
+	}{
+		{"already statused", func() Pokemon {
+			p := fighter(speciesTarget, 100, moveTackle)
+			p.Status = Burn
+			return p
+		}()},
+		{"immune to the type", fighter(speciesEarth, 100, moveTackle)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			state := effectState(t, fighter(speciesRunner, 130, moveZap), tt.defender)
+			rng := &scriptRNG{values: []int{0}}
+			r := &Resolver{Data: testData(), RNG: rng}
+
+			if _, _, err := r.ResolveTurn(state, MoveAction{Slot: 0}, SwitchAction{Target: 1}); err != nil {
+				t.Fatalf("ResolveTurn() error = %v", err)
+			}
+			if rng.calls != 0 {
+				t.Errorf("random draws = %d, want 0 (no accuracy roll)", rng.calls)
+			}
+		})
+	}
+}
+
 // ねむりは継続turnも決まる。相手が反動中なら状態異常を上書きして眠らせる。
 func TestSleepMove(t *testing.T) {
 	t.Parallel()
@@ -347,7 +381,7 @@ func TestSleepMove(t *testing.T) {
 		defender.Recharging = true
 
 		state := effectState(t, fighter(speciesRunner, 130, moveLull), defender)
-		r := testResolver(0, 2)
+		r := testResolver(3) // ねむりの長さ（1 + 3）。命中判定は行われない
 
 		next, _, err := r.ResolveTurn(state, MoveAction{Slot: 0}, MoveAction{Slot: 0})
 		if err != nil {
@@ -360,6 +394,69 @@ func TestSleepMove(t *testing.T) {
 		}
 		if target.Recharging {
 			t.Error("the target still needs to recharge, want it cleared")
+		}
+	})
+
+	// 反動中の相手には命中判定をしない。実機は状態異常の確認も命中判定も飛ばして眠らせる。
+	t.Run("skips the accuracy check against a recharging target", func(t *testing.T) {
+		t.Parallel()
+
+		defender := fighter(speciesTarget, 100, moveTackle)
+		defender.Recharging = true
+
+		state := effectState(t, fighter(speciesRunner, 130, moveLull), defender)
+		inaccurate := dataWithMove(Move{
+			ID: moveLull, Type: TypeNormal, Power: 0, Accuracy: AccuracyPercent(75), MaxPP: 10,
+			Effect: EffectSleep,
+		})
+		// 命中判定に使われれば必ず外れる値。使われなければねむりの長さになる。
+		rng := &scriptRNG{values: []int{255}}
+		r := &Resolver{Data: inaccurate, RNG: rng}
+
+		next, events, err := r.ResolveTurn(state, MoveAction{Slot: 0}, MoveAction{Slot: 0})
+		if err != nil {
+			t.Fatalf("ResolveTurn() error = %v", err)
+		}
+
+		assertEvents(t, events, []Event{
+			MoveUsed{Side: Player1, Slot: 0, Move: moveLull},
+			StatusApplied{Side: Player2, Status: Sleep},
+			ActionBlocked{Side: Player2, Reason: BlockedBySleep},
+		})
+		if got := next.Players[Player2].ActivePokemon().Status; got != Sleep {
+			t.Errorf("status = %v, want %v", got, Sleep)
+		}
+		// 引いたのはねむりの長さの1回だけ。
+		if rng.calls != 1 {
+			t.Errorf("random draws = %d, want 1 (no accuracy roll)", rng.calls)
+		}
+	})
+
+	// 反動中でなければ、命中率どおりに外れる。
+	t.Run("can miss a target that is not recharging", func(t *testing.T) {
+		t.Parallel()
+
+		state := effectState(t,
+			fighter(speciesRunner, 130, moveLull),
+			fighter(speciesTarget, 100, moveTackle),
+		)
+		inaccurate := dataWithMove(Move{
+			ID: moveLull, Type: TypeNormal, Power: 0, Accuracy: AccuracyPercent(75), MaxPP: 10,
+			Effect: EffectSleep,
+		})
+		r := &Resolver{Data: inaccurate, RNG: &scriptRNG{values: []int{255}}}
+
+		next, events, err := r.ResolveTurn(state, MoveAction{Slot: 0}, SwitchAction{Target: 1})
+		if err != nil {
+			t.Fatalf("ResolveTurn() error = %v", err)
+		}
+		assertEvents(t, events, []Event{
+			Switched{Side: Player2, From: 0, To: 1},
+			MoveUsed{Side: Player1, Slot: 0, Move: moveLull},
+			MoveMissed{Side: Player1},
+		})
+		if got := next.Players[Player2].ActivePokemon().Status; got != NoStatus {
+			t.Errorf("status = %v, want %v", got, NoStatus)
 		}
 	})
 

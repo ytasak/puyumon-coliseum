@@ -75,6 +75,51 @@ type StatusRecovered struct {
 
 func (StatusRecovered) event() {}
 
+// Healed はHPが回復したこと。
+type Healed struct {
+	// Side は回復した側。
+	Side Side
+	// Amount は回復した量。
+	Amount int
+	// RemainingHP は回復したあとの現在HP。
+	RemainingHP int
+}
+
+func (Healed) event() {}
+
+// StatStageChanged は能力変化のstageが動いたこと。
+type StatStageChanged struct {
+	// Side は能力が変わった側。
+	Side Side
+	// Stat はどの能力か。
+	Stat Stat
+	// Delta は実際に動いた段階数。上下限で頭打ちになった分は含まない。
+	Delta int
+}
+
+func (StatStageChanged) event() {}
+
+// MultiHit は1回の使用で複数回当たったこと。直前のDamageがその内訳になる。
+type MultiHit struct {
+	// Side は技を使った側。
+	Side Side
+	// Hits は当たった回数。
+	Hits int
+}
+
+func (MultiHit) event() {}
+
+// MoveFailed は技が当たったものの、効果が起きなかったこと。
+//
+// すでに同じ状態異常を持っている、HPが満タンで回復できない、といった場合に出る。
+// タイプ相性で通らなかった場合はUnaffectedを使う。
+type MoveFailed struct {
+	// Side は技を使った側。
+	Side Side
+}
+
+func (MoveFailed) event() {}
+
 // Fainted は戦闘不能になったこと。
 type Fainted struct {
 	// Side は戦闘不能になった側。

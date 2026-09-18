@@ -38,6 +38,9 @@ type Resolver struct {
 //
 // 交代は技より先に解決する。技同士はmove priority、effective Speed、
 // 同速なら乱数で順序を決める。
+//
+// 手番のあとにどちらかのactiveが戦闘不能になっていれば、そこでturnを打ち切る。
+// 先攻が自分の継続ダメージで倒れた場合も同じで、後攻はそのturn行動しない。
 func (r *Resolver) ResolveTurn(state BattleState, p1, p2 Action) (BattleState, []Event, error) {
 	original := state
 	actions := [2]Action{Player1: p1, Player2: p2}
@@ -72,6 +75,12 @@ func (r *Resolver) ResolveTurn(state BattleState, p1, p2 Action) (BattleState, [
 			return original, nil, err
 		}
 		events = append(events, turnEvents...)
+
+		// 実機は手番のあとに戦闘不能を見つけると、その場でfaintの処理へ移る。
+		// 先攻が自分の継続ダメージで倒れた場合も含めて、後続の行動は起きない。
+		if activeFainted(state) {
+			break
+		}
 	}
 
 	state.Turn++
@@ -376,6 +385,17 @@ func effectiveSpeed(state BattleState, side Side) int {
 		speed = ParalyzedSpeed(speed)
 	}
 	return speed
+}
+
+// activeFainted は場に出ているPokemonのどちらかが戦闘不能かを返す。
+func activeFainted(state BattleState) bool {
+	for _, side := range sides {
+		player := state.Players[side]
+		if player.Team[player.Active].Fainted() {
+			return true
+		}
+	}
+	return false
 }
 
 // outcome は両者に戦えるPokemonが残っているかから対戦の進行状況を決める。

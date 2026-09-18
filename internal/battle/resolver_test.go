@@ -750,25 +750,20 @@ func TestResolveTurnDecidesTheWinner(t *testing.T) {
 	}
 }
 
-// 両者の最後の1体が同じturnに倒れたら引き分け。
-func TestResolveTurnDraw(t *testing.T) {
+// 先攻が自分の継続ダメージで倒れたら、後攻はそのturn行動しない。
+//
+// 実機は手番のあとに継続ダメージを処理し、そこでHPが0になると即座にfaintの処理へ
+// 移るため、後攻の技実行まで進まない。
+func TestResolveTurnStopsWhenFirstMoverFaintsFromResidualDamage(t *testing.T) {
 	t.Parallel()
 
-	dying := func() Pokemon {
-		p := fighter(speciesTarget, 100, moveShaky)
-		p.Status = Poison
-		p.CurrentHP = 12 // 継続ダメージでちょうど倒れる
-		return p
-	}
+	dying := fighter(speciesRunner, 130, moveShaky)
+	dying.Status = Poison
+	dying.CurrentHP = 12 // 継続ダメージでちょうど倒れる
 
-	state := turnState(t, dying(), dying())
-	state.Players[Player1].Team[0].Stats.Speed = 130 // 先攻を固定する
-	for _, side := range sides {
-		state.Players[side].Team[1].CurrentHP = 0
-		state.Players[side].Team[2].CurrentHP = 0
-	}
+	state := turnState(t, dying, fighter(speciesTarget, 100, moveTackle))
+	r := testResolver(255) // 先攻の技は外す
 
-	r := testResolver(255) // 両者とも技を外し、継続ダメージだけが入る
 	next, events, err := r.ResolveTurn(state, MoveAction{Slot: 0}, MoveAction{Slot: 0})
 	if err != nil {
 		t.Fatalf("ResolveTurn() error = %v", err)
@@ -779,12 +774,70 @@ func TestResolveTurnDraw(t *testing.T) {
 		MoveMissed{Side: Player1},
 		Damage{Side: Player1, Amount: 12, RemainingHP: 0},
 		Fainted{Side: Player1, Index: 0},
-		MoveUsed{Side: Player2, Slot: 0, Move: moveShaky},
-		MoveMissed{Side: Player2},
-		Damage{Side: Player2, Amount: 12, RemainingHP: 0},
+	})
+
+	// 後攻は行動していないので、PPもHPも動いていない。
+	assertPP(t, next, Player2, 0, 15)
+	if got := next.Players[Player2].ActivePokemon().CurrentHP; got != 200 {
+		t.Errorf("player2 HP = %d, want 200 (it never acted)", got)
+	}
+	if !next.NeedsReplacement(Player1) {
+		t.Error("NeedsReplacement(player1) = false, want true")
+	}
+}
+
+// 相手を倒した手番でも、そこでturnを打ち切る。
+func TestResolveTurnStopsAfterAKnockout(t *testing.T) {
+	t.Parallel()
+
+	weak := fighter(speciesTarget, 100, moveTackle)
+	weak.CurrentHP = 10
+
+	state := turnState(t, fighter(speciesRunner, 130, moveTackle), weak)
+	r := testResolver(0, 255, 255)
+
+	next, events, err := r.ResolveTurn(state, MoveAction{Slot: 0}, MoveAction{Slot: 0})
+	if err != nil {
+		t.Fatalf("ResolveTurn() error = %v", err)
+	}
+
+	assertEvents(t, events, []Event{
+		MoveUsed{Side: Player1, Slot: 0, Move: moveTackle},
+		Damage{Side: Player2, Amount: 10, RemainingHP: 0},
 		Fainted{Side: Player2, Index: 0},
 	})
-	if next.Status != Draw {
-		t.Errorf("Status = %v, want %v", next.Status, Draw)
+	assertPP(t, next, Player2, 0, 15)
+}
+
+// 両者に戦えるPokemonが残っていなければ引き分け。
+//
+// 通常の技と継続ダメージだけでは、どちらかが倒れた時点でturnを打ち切るため
+// 同じturnに両者が倒れることはない。相打ちになる技（Explosion系）は別Issueの範囲で、
+// ここでは状態から進行状況を決める部分だけを確かめる。
+func TestOutcomeDetectsDrawAndWinner(t *testing.T) {
+	t.Parallel()
+
+	state := turnState(t,
+		fighter(speciesRunner, 130, moveTackle),
+		fighter(speciesTarget, 100, moveTackle),
+	)
+	for _, side := range sides {
+		for i := range state.Players[side].Team {
+			state.Players[side].Team[i].CurrentHP = 0
+		}
+	}
+
+	if got := outcome(state); got != Draw {
+		t.Errorf("outcome() = %v, want %v", got, Draw)
+	}
+
+	state.Players[Player1].Team[2].CurrentHP = 10
+	if got := outcome(state); got != Player1Won {
+		t.Errorf("outcome() = %v, want %v", got, Player1Won)
+	}
+
+	state.Players[Player2].Team[1].CurrentHP = 10
+	if got := outcome(state); got != Ongoing {
+		t.Errorf("outcome() = %v, want %v", got, Ongoing)
 	}
 }

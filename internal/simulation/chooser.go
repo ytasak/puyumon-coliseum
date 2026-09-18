@@ -22,9 +22,36 @@ type Chooser interface {
 	Replacement(state battle.BattleState, side battle.Side) battle.SwitchAction
 }
 
+// ChooserFactory は1回のRunで使うChooserを作る。
+//
+// Chooserは行動を選ぶ過程で状態を持つことがある（Scriptがどこまで使ったか、など）。
+// Configがそのinstanceを直接持つと、同じConfigで2回Runしたときに
+// 1回目で進んだ状態から始まってしまい、同じ初期状態・同じ行動列にならない。
+//
+// そのためConfigはinstanceではなく作り方を持つ。Runは開始時にこれを呼び、
+// そのRun専用のChooserを得る。並列にRunしてもChooserを共有しない。
+//
+// 呼ばれるたびに新しいChooserを返すこと。同じinstanceを返すと上の前提が崩れる。
+type ChooserFactory func() Chooser
+
+// Replay はScriptの定義から、Runごとに同じ行動列を再現するChooserFactoryを返す。
+//
+// 引数は定義として扱い、呼ばれるたびに複製する。使いかけのScriptを渡すと
+// その途中から始まる複製ができるので、定義そのものを渡すこと。
+func Replay(script Script) ChooserFactory {
+	return func() Chooser {
+		// 値として複製することで、どこまで使ったかがRunごとに分かれる。
+		fresh := script
+		return &fresh
+	}
+}
+
 // Script は決められたAction列を順に返すChooser。
 //
 // Actionが尽きたらFallbackへ委ねる。scripted actionsで特定の流れを再現するために使う。
+//
+// どこまで使ったかを持つので、1つのinstanceを複数のRunで使い回さない。
+// ConfigへはReplayを通して渡す。
 type Script struct {
 	// Actions は使う順に並べた行動。
 	Actions []battle.Action
@@ -32,11 +59,18 @@ type Script struct {
 	// Replacements は戦闘不能のたびに使う交代先。尽きたらFallbackへ委ねる。
 	Replacements []battle.SwitchAction
 
-	// Fallback はActionsやReplacementsが尽きたときに使う。nilならFirstUsableを使う。
-	Fallback Chooser
+	// Fallback はActionsやReplacementsが尽きたときに使うChooserの作り方。
+	// nilならFirstUsableを使う。
+	//
+	// instanceではなく作り方を持つのはConfigと同じ理由で、
+	// Scriptを複製したときにFallbackの状態まで共有してしまうのを防ぐため。
+	Fallback ChooserFactory
 
 	actionIndex      int
 	replacementIndex int
+
+	// fallback は初回に作ったFallbackのinstance。Script1つにつき1つ。
+	fallback Chooser
 }
 
 // Action は次の行動を返す。
@@ -46,7 +80,7 @@ func (s *Script) Action(state battle.BattleState, side battle.Side) battle.Actio
 		s.actionIndex++
 		return action
 	}
-	return s.fallback().Action(state, side)
+	return s.fallbackChooser().Action(state, side)
 }
 
 // Replacement は次の交代先を返す。
@@ -56,14 +90,21 @@ func (s *Script) Replacement(state battle.BattleState, side battle.Side) battle.
 		s.replacementIndex++
 		return action
 	}
-	return s.fallback().Replacement(state, side)
+	return s.fallbackChooser().Replacement(state, side)
 }
 
-func (s *Script) fallback() Chooser {
-	if s.Fallback != nil {
-		return s.Fallback
+// fallbackChooser はFallbackのinstanceを返す。初回だけ作る。
+func (s *Script) fallbackChooser() Chooser {
+	if s.fallback != nil {
+		return s.fallback
 	}
-	return FirstUsable{}
+	if s.Fallback != nil {
+		s.fallback = s.Fallback()
+	}
+	if s.fallback == nil {
+		s.fallback = FirstUsable{}
+	}
+	return s.fallback
 }
 
 // FirstUsable は使えるいちばん上の技を選ぶChooser。

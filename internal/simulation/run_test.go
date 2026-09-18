@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ytasak/puyumon-coliseum/internal/battle"
@@ -37,22 +38,22 @@ func goldenConfig() Config {
 			{roster.SpeciesPalm, roster.SpeciesCharm, roster.SpeciesWhale},
 		},
 		Seed: goldenSeed,
-		Choosers: [2]Chooser{
-			&Script{Actions: []battle.Action{
+		Choosers: [2]ChooserFactory{
+			Replay(Script{Actions: []battle.Action{
 				move(1),                        // overdrive。次のturnは反動で動けない
 				move(0),                        // 反動で流れるので、指定した技は使われない
 				move(0),                        // ねむりで動けない
 				battle.SwitchAction{Target: 1}, // ねむったbullを下げる
 				move(0), move(0), move(0), move(0),
 				move(0), move(0), move(0), move(0),
-			}},
-			&Script{Actions: []battle.Action{
+			}}),
+			Replay(Script{Actions: []battle.Action{
 				move(1), // mindblast
 				move(0), // spores。bullをねむらせる
 				move(1), move(1), move(1), move(1),
 				move(1), move(1), move(1), move(1),
 				move(1), move(1),
-			}},
+			}}),
 		},
 		MaxTurns: 20,
 	}
@@ -240,33 +241,81 @@ func TestGoldenScenarioCoversRequiredBehaviour(t *testing.T) {
 	}
 }
 
+// sameResult は2つの結果が完全に一致するかを調べる。
+func sameResult(t *testing.T, label string, first, second Result) {
+	t.Helper()
+
+	if first.Final != second.Final {
+		t.Errorf("%s: final BattleStateが一致しない", label)
+	}
+	if first.Turns != second.Turns || first.TurnLimitReached != second.TurnLimitReached {
+		t.Errorf("%s: turn数が一致しない: %d/%v と %d/%v",
+			label, first.Turns, first.TurnLimitReached, second.Turns, second.TurnLimitReached)
+	}
+	if len(first.Events) != len(second.Events) {
+		t.Errorf("%s: Event数が一致しない: %d と %d", label, len(first.Events), len(second.Events))
+		return
+	}
+	for i := range first.Events {
+		if first.Events[i] != second.Events[i] {
+			t.Errorf("%s: Events[%d] が一致しない: %v と %v", label, i, first.Events[i], second.Events[i])
+		}
+	}
+}
+
 // TestRunIsDeterministic は同じConfigから常に同じ結果が出ることを確かめる。
 //
 // goldenの値ではなく、2回の実行が完全に一致することで再現性を見る。
+//
+// Configは作り直さず、同じ値を2回渡す。ConfigがChooserのinstanceを持っていると、
+// 2回目は1回目で進んだscriptの続きから始まってしまう。
 func TestRunIsDeterministic(t *testing.T) {
-	first, err := Run(goldenConfig())
+	cfg := goldenConfig()
+
+	first, err := Run(cfg)
 	if err != nil {
 		t.Fatalf("1回目のRun() error = %v", err)
 	}
-	second, err := Run(goldenConfig())
+	second, err := Run(cfg)
 	if err != nil {
 		t.Fatalf("2回目のRun() error = %v", err)
 	}
 
-	if first.Final != second.Final {
-		t.Error("2回の実行でfinal BattleStateが一致しない")
+	sameResult(t, "同じConfigの2回目", first, second)
+}
+
+// TestRunIsSafeForConcurrentUse は同じConfigを並列に実行しても
+// 互いの状態を共有しないことを確かめる。
+//
+// 大量simulationを並列化したときに、Chooserの共有が結果を汚さないようにするため。
+// -race と合わせて意味を持つ。
+func TestRunIsSafeForConcurrentUse(t *testing.T) {
+	cfg := goldenConfig()
+
+	want, err := Run(cfg)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
 	}
-	if first.Turns != second.Turns || first.TurnLimitReached != second.TurnLimitReached {
-		t.Errorf("turn数が一致しない: %d/%v と %d/%v",
-			first.Turns, first.TurnLimitReached, second.Turns, second.TurnLimitReached)
+
+	const workers = 8
+	results := make([]Result, workers)
+	errs := make([]error, workers)
+	var wg sync.WaitGroup
+	for i := range results {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i], errs[i] = Run(cfg)
+		}()
 	}
-	if len(first.Events) != len(second.Events) {
-		t.Fatalf("Event数が一致しない: %d と %d", len(first.Events), len(second.Events))
-	}
-	for i := range first.Events {
-		if first.Events[i] != second.Events[i] {
-			t.Errorf("Events[%d] が一致しない: %v と %v", i, first.Events[i], second.Events[i])
+	wg.Wait()
+
+	for i := range results {
+		if errs[i] != nil {
+			t.Errorf("%d本目のRun() error = %v", i, errs[i])
+			continue
 		}
+		sameResult(t, fmt.Sprintf("並列実行の%d本目", i), results[i], want)
 	}
 }
 
@@ -350,6 +399,18 @@ func TestRunAllCombinations(t *testing.T) {
 		}
 	}
 	t.Logf("%d対戦のうち上限で未決着になったのは %d", len(combinations)*len(combinations), unresolved)
+}
+
+// TestRunRejectsNilChooser はChooserFactoryがnilを返したらerrorにすることを確かめる。
+//
+// FirstUsableで代用すると、意図しない行動で走った結果を正しい結果と取り違える。
+func TestRunRejectsNilChooser(t *testing.T) {
+	cfg := goldenConfig()
+	cfg.Choosers[battle.Player1] = func() Chooser { return nil }
+
+	if _, err := Run(cfg); err == nil {
+		t.Error("Run() error = nil, want error")
+	}
 }
 
 // TestRunRejectsUnknownCharacter は定義にないキャラクターをerrorにすることを確かめる。

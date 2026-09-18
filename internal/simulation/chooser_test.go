@@ -64,7 +64,7 @@ func TestScriptFallsBackWhenExhausted(t *testing.T) {
 // TestScriptUsesGivenFallback は指定したFallbackを使うことを確かめる。
 func TestScriptUsesGivenFallback(t *testing.T) {
 	state := testState(t)
-	script := &Script{Fallback: fixedChooser{slot: 3, target: 2}}
+	script := &Script{Fallback: func() Chooser { return fixedChooser{slot: 3, target: 2} }}
 
 	if got := script.Action(state, battle.Player1); got != (battle.MoveAction{Slot: 3}) {
 		t.Errorf("Action() = %v, want slot 3", got)
@@ -140,4 +140,64 @@ func (c fixedChooser) Action(battle.BattleState, battle.Side) battle.Action {
 
 func (c fixedChooser) Replacement(battle.BattleState, battle.Side) battle.SwitchAction {
 	return battle.SwitchAction{Target: c.target}
+}
+
+// TestReplayStartsFromTheDefinition はReplayが呼ばれるたびに
+// 使いかけでないScriptを返すことを確かめる。
+//
+// Configを使い回しても、前のRunで進んだ分を引き継がないことの土台になる。
+func TestReplayStartsFromTheDefinition(t *testing.T) {
+	state := testState(t)
+	factory := Replay(Script{Actions: []battle.Action{
+		battle.MoveAction{Slot: 2},
+		battle.MoveAction{Slot: 3},
+	}})
+
+	first := factory()
+	first.Action(state, battle.Player1)
+	first.Action(state, battle.Player1)
+
+	second := factory()
+	if got := second.Action(state, battle.Player1); got != (battle.MoveAction{Slot: 2}) {
+		t.Errorf("2つ目のChooserのAction() = %v, want slot 2（先頭から始まる）", got)
+	}
+	if first == second {
+		t.Error("Replayが同じinstanceを返している")
+	}
+}
+
+// TestReplayDoesNotShareFallback は複製したScript同士が
+// Fallbackのinstanceを共有しないことを確かめる。
+func TestReplayDoesNotShareFallback(t *testing.T) {
+	state := testState(t)
+	created := 0
+	factory := Replay(Script{Fallback: func() Chooser {
+		created++
+		return fixedChooser{slot: 1, target: 1}
+	}})
+
+	factory().Action(state, battle.Player1)
+	factory().Action(state, battle.Player1)
+
+	if created != 2 {
+		t.Errorf("Fallbackを作った回数 = %d, want 2", created)
+	}
+}
+
+// TestScriptCreatesFallbackOnce は1つのScriptがFallbackを1度だけ作ることを確かめる。
+func TestScriptCreatesFallbackOnce(t *testing.T) {
+	state := testState(t)
+	created := 0
+	script := &Script{Fallback: func() Chooser {
+		created++
+		return fixedChooser{slot: 1, target: 1}
+	}}
+
+	script.Action(state, battle.Player1)
+	script.Action(state, battle.Player1)
+	script.Replacement(state, battle.Player1)
+
+	if created != 1 {
+		t.Errorf("Fallbackを作った回数 = %d, want 1", created)
+	}
 }

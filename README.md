@@ -248,6 +248,7 @@ Linear に明示されていない箇所について、以下を採用した。�
 | simulation の責務 | scenario を進める・結果をまとめる・上限で止める、の 3 つだけ | 対戦のルールを二重に持たない。ここに判定を書くと engine と食い違っても気づけない |
 | turn 上限 | 対戦ルールには入れず simulation 側だけが持つ。到達したら `TurnLimitReached` を立て、`BattleState.Status` は `Ongoing` のままにする | 終わらない simulation を止めるための安全装置であって、ゲームのルールではない。勝敗を捏造しない |
 | 行動の選び方 | `FirstUsable`（使える先頭の技）と `Script`（決めた順に返す）の 2 つだけ | 賢い Bot は Out of scope。大量 simulation と golden scenario に必要な最小限にとどめる |
+| `Config` が持つもの | Chooser の instance ではなく作り方（`ChooserFactory`）。`Run` ごとに新しい Chooser を作る | `Script` は「どこまで使ったか」を持つ。instance を持たせると同じ `Config` の 2 回目が途中から始まり、「同じ初期状態・同じ行動列・同じ seed」でなくなる。並列に回しても Chooser を共有しない |
 | 統合 golden の固定範囲 | 代表 scenario 1 本だけ Event 全文と final state を固定する。20 通りの総当たりでは固定しない | 目的は「mechanics を通した結果が意図せず変わったこと」の検出。個々の値の正しさは YTA-16〜YTA-19 の独立 golden が正 |
 | 代表 scenario の作り方 | 両者の行動を script で固定し、急所・ねむり・こおりが 1 本へ収まる seed を選んだ | 交代・状態異常・急所・戦闘不能・反動（YTA-19）を 11 turn で通せる。含めるべき挙動が抜けた scenario へ差し替わらないよう、内容の検査も test に置いた |
 | 再現性の確かめ方 | golden 値ではなく、同じ Config を 2 回実行して state と Event 列が完全に一致することで見る | golden は「変わったこと」を、この test は「毎回同じであること」を担保する。役割が違う |

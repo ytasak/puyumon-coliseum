@@ -24,7 +24,11 @@ type Config struct {
 	Seed uint64
 
 	// Choosers は各プレイヤーの行動の選び方。nilならFirstUsableを使う。
-	Choosers [2]Chooser
+	//
+	// Chooserそのものではなく作り方を持つ。こうしておくとConfigは
+	// scenarioの定義のままでいられるので、同じConfigを何度でも、
+	// 並列にでもRunできる。scriptedな行動列はReplayで渡す。
+	Choosers [2]ChooserFactory
 
 	// MaxTurns はsimulationを打ち切るturn数。0ならDefaultMaxTurnsを使う。
 	//
@@ -74,13 +78,12 @@ func Run(cfg Config) (Result, error) {
 		return Result{}, err
 	}
 
-	resolver := &battle.Resolver{Data: roster.Data(), RNG: battle.NewRand(cfg.Seed)}
-	choosers := cfg.Choosers
-	for i := range choosers {
-		if choosers[i] == nil {
-			choosers[i] = FirstUsable{}
-		}
+	choosers, err := newChoosers(cfg.Choosers)
+	if err != nil {
+		return Result{}, err
 	}
+
+	resolver := &battle.Resolver{Data: roster.Data(), RNG: battle.NewRand(cfg.Seed)}
 
 	var result Result
 	for result.Turns < maxTurns {
@@ -121,4 +124,23 @@ func Run(cfg Config) (Result, error) {
 	result.Final = state
 	result.TurnLimitReached = state.Status == battle.Ongoing
 	return result, nil
+}
+
+// newChoosers はこのRunで使うChooserを作る。
+//
+// Runごとに作るので、Configを使い回しても前のRunの状態を引き継がない。
+func newChoosers(factories [2]ChooserFactory) ([2]Chooser, error) {
+	var choosers [2]Chooser
+	for _, side := range sides {
+		if factories[side] == nil {
+			choosers[side] = FirstUsable{}
+			continue
+		}
+		chooser := factories[side]()
+		if chooser == nil {
+			return choosers, fmt.Errorf("simulation: chooser factory for %s returned nil", side)
+		}
+		choosers[side] = chooser
+	}
+	return choosers, nil
 }

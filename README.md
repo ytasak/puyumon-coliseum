@@ -130,6 +130,7 @@ internal/sprite/            複数 Emoji を 1 体として定義・描画する
 internal/anim/              アニメーションの状態管理と Emoji particle
 internal/battle/            Battle Engine。domain model・タイプ相性・ダメージ・状態異常・turn resolver（UI 非依存）
 internal/roster/            6 キャラクターと固定 move set のデータ（UI 非依存）
+internal/simulation/        Battle Engine を UI なしで回す simulation harness（UI 非依存）
 docs/mobile-safari-poc.md   iPhone Safari / iframe 検証の手順と記録（YTA-10）
 docs/wasm-delivery.md       本番配信時の圧縮手順と実測サイズ（YTA-12）
 docs/loading-experience.md  初回ロード中の表示と、回線別のロード時間（YTA-13）
@@ -164,6 +165,12 @@ platform 固有の処理（ウィンドウ設定・HTTP 配信・ブラウザ bo
 
 `internal/roster` は「誰がどんな技を持つか」というゲーム定義だけを持ち、ルールは持たない。
 `battle.Data` へ変換して engine へ渡すので、キャラクターや技が増えても engine のコードは変わらない。
+
+`internal/simulation` は Battle Engine を UI なしで回すための入口で、対戦のルールを一切持たない。
+行動順もダメージも状態異常も `internal/battle` の `Resolver` が決め、キャラクターと技は `internal/roster` から取る。
+この層の責務は「scenario を進める」「結果をまとめる」「上限で止める」の 3 つだけで、
+engine のロジックを test 側へ写し取らないための境界でもある。
+後続のバランス検証がそのまま呼べるように、test helper ではなく production のコードとして置いている。
 
 `internal/anim` はアニメーションの**状態**だけを持ち、キャラクター定義も base transform も持たない。
 描画に使う transform は毎回 base から計算し直すため、再生を繰り返してもずれが蓄積しない。
@@ -237,6 +244,14 @@ Linear に明示されていない箇所について、以下を採用した。�
 | 1/256 miss | 再現しない。命中率が最大（255）なら必中 | Issue の指示。再現する場合は Battle Rules Specification を先に更新する |
 | 乱数の消費数 | 命中判定もダメージ乱数も、結果によらず常に 1 つ消費する | ROM と bit 互換ではないので、消費数を一定にして追いやすさを優先した |
 | Gen I のタイプ相性 | 出荷 ROM と同じ 82 エントリをデータとして持ち、表に無い組み合わせは等倍 | 現代世代の知識で「直して」しまう事故を防ぐ。データは [pokered](https://github.com/pret/pokered) の `data/types/type_matchups.asm` と突き合わせた。後の世代で変わった相性は個別の test でも固定している |
+| simulation harness の位置 | `internal/simulation` に production package として置く | 後続の Balance milestone からそのまま呼べるようにする。test helper にすると test からしか使えない。Product Owner 判断（YTA-21） |
+| simulation の責務 | scenario を進める・結果をまとめる・上限で止める、の 3 つだけ | 対戦のルールを二重に持たない。ここに判定を書くと engine と食い違っても気づけない |
+| turn 上限 | 対戦ルールには入れず simulation 側だけが持つ。到達したら `TurnLimitReached` を立て、`BattleState.Status` は `Ongoing` のままにする | 終わらない simulation を止めるための安全装置であって、ゲームのルールではない。勝敗を捏造しない |
+| 行動の選び方 | `FirstUsable`（使える先頭の技）と `Script`（決めた順に返す）の 2 つだけ | 賢い Bot は Out of scope。大量 simulation と golden scenario に必要な最小限にとどめる |
+| 統合 golden の固定範囲 | 代表 scenario 1 本だけ Event 全文と final state を固定する。20 通りの総当たりでは固定しない | 目的は「mechanics を通した結果が意図せず変わったこと」の検出。個々の値の正しさは YTA-16〜YTA-19 の独立 golden が正 |
+| 代表 scenario の作り方 | 両者の行動を script で固定し、急所・ねむり・こおりが 1 本へ収まる seed を選んだ | 交代・状態異常・急所・戦闘不能・反動（YTA-19）を 11 turn で通せる。含めるべき挙動が抜けた scenario へ差し替わらないよう、内容の検査も test に置いた |
+| 再現性の確かめ方 | golden 値ではなく、同じ Config を 2 回実行して state と Event 列が完全に一致することで見る | golden は「変わったこと」を、この test は「毎回同じであること」を担保する。役割が違う |
+| headless の担保 | 依存を辿って Ebitengine が混ざっていないことを test で検査する | package 自身の import を見るだけでは、`internal/battle` や `internal/roster` 経由の混入を防げない |
 | ゴースト技 → エスパー | 0×（効かない）。出荷されたとおり | 本来は効果ばつぐんの意図だったとされる実装ミスだが、初代の対戦を決定づけた挙動のため維持する。Product Owner 判断 |
 | 相性倍率の持ち方 | 100 を等倍とする整数 | 0.25 / 0.5 / 2 / 4 を誤差なく扱える。ただし Gen I はダメージへ防御側のタイプごとに掛けて都度切り捨てるため、ダメージ計算では合成値ではなく `Against` をタイプごとに使う |
 | stage 倍率の持ち方 | 分子・分母のまま持つ（`25/100` 〜 `4/1`） | Gen I は整数演算で掛けるので、小数へ直すと端数の出る値で結果がずれる。値は pokered の `data/battle/stat_modifiers.asm` と一致 |

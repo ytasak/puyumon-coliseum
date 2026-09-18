@@ -32,24 +32,37 @@ const (
 
 // moves は技の定義。
 //
-// 効果（まひ付与・回復・自爆など）はまだ表現していない。battle.Moveが効果を
-// 持つようになるのは技の特殊挙動を実装するIssueで、それまで威力0の技は
-// 何も起きない技として扱われる。
+// 追加効果の発生率は実機と同じ「百分率 * 255 / 100 + 1」の表現で持つ。
+// 威力0の技は、Effectそのものが技の内容になる。
 var moves = []battle.Move{
-	{ID: MoveSlam, Type: battle.TypeNormal, Power: 85, Accuracy: battle.AccuracyPercent(100), MaxPP: 15},
-	{ID: MoveOverdrive, Type: battle.TypeNormal, Power: 150, Accuracy: battle.AccuracyPercent(90), MaxPP: 5},
+	{ID: MoveSlam, Type: battle.TypeNormal, Power: 85, Accuracy: battle.AccuracyPercent(100), MaxPP: 15,
+		Effect: battle.EffectParalyze, EffectChance: battle.EffectChancePercent(30)},
+	{ID: MoveOverdrive, Type: battle.TypeNormal, Power: 150, Accuracy: battle.AccuracyPercent(90), MaxPP: 5,
+		Effect: battle.EffectRecharge},
 	{ID: MoveQuake, Type: battle.TypeGround, Power: 100, Accuracy: battle.AccuracyPercent(100), MaxPP: 10},
-	{ID: MoveIcestorm, Type: battle.TypeIce, Power: 120, Accuracy: battle.AccuracyPercent(90), MaxPP: 5},
+	{ID: MoveIcestorm, Type: battle.TypeIce, Power: 120, Accuracy: battle.AccuracyPercent(90), MaxPP: 5,
+		Effect: battle.EffectFreeze, EffectChance: battle.EffectChancePercent(10)},
 	{ID: MoveTide, Type: battle.TypeWater, Power: 95, Accuracy: battle.AccuracyPercent(100), MaxPP: 15},
-	{ID: MoveMindblast, Type: battle.TypePsychic, Power: 90, Accuracy: battle.AccuracyPercent(100), MaxPP: 10},
-	{ID: MoveSpark, Type: battle.TypeElectric, Power: 95, Accuracy: battle.AccuracyPercent(100), MaxPP: 15},
-	{ID: MoveNumb, Type: battle.TypeElectric, Power: 0, Accuracy: battle.AccuracyPercent(100), MaxPP: 20},
-	{ID: MoveMend, Type: battle.TypeNormal, Power: 0, Accuracy: battle.AccuracyPercent(100), MaxPP: 20},
-	{ID: MoveDoze, Type: battle.TypePsychic, Power: 0, Accuracy: battle.AccuracyPercent(100), MaxPP: 10},
-	{ID: MoveSlumber, Type: battle.TypeNormal, Power: 0, Accuracy: battle.AccuracyPercent(75), MaxPP: 10},
-	{ID: MoveSpores, Type: battle.TypeGrass, Power: 0, Accuracy: battle.AccuracyPercent(75), MaxPP: 15},
-	{ID: MoveDrain, Type: battle.TypeGrass, Power: 40, Accuracy: battle.AccuracyPercent(100), MaxPP: 10},
-	{ID: MoveBurst, Type: battle.TypeNormal, Power: 170, Accuracy: battle.AccuracyPercent(100), MaxPP: 5},
-	{ID: MoveNeedles, Type: battle.TypeBug, Power: 14, Accuracy: battle.AccuracyPercent(85), MaxPP: 20},
-	{ID: MoveDash, Type: battle.TypePsychic, Power: 0, Accuracy: battle.AccuracyPercent(100), MaxPP: 30},
+	{ID: MoveMindblast, Type: battle.TypePsychic, Power: 90, Accuracy: battle.AccuracyPercent(100), MaxPP: 10,
+		Effect: battle.EffectSpecialDown, EffectChance: battle.EffectChancePercent(33)},
+	{ID: MoveSpark, Type: battle.TypeElectric, Power: 95, Accuracy: battle.AccuracyPercent(100), MaxPP: 15,
+		Effect: battle.EffectParalyze, EffectChance: battle.EffectChancePercent(10)},
+	{ID: MoveNumb, Type: battle.TypeElectric, Power: 0, Accuracy: battle.AccuracyPercent(100), MaxPP: 20,
+		Effect: battle.EffectParalyze},
+	{ID: MoveMend, Type: battle.TypeNormal, Power: 0, Accuracy: battle.AccuracyPercent(100), MaxPP: 20,
+		Effect: battle.EffectHeal},
+	{ID: MoveDoze, Type: battle.TypePsychic, Power: 0, Accuracy: battle.AccuracyPercent(100), MaxPP: 10,
+		Effect: battle.EffectRest},
+	{ID: MoveSlumber, Type: battle.TypeNormal, Power: 0, Accuracy: battle.AccuracyPercent(75), MaxPP: 10,
+		Effect: battle.EffectSleep},
+	{ID: MoveSpores, Type: battle.TypeGrass, Power: 0, Accuracy: battle.AccuracyPercent(75), MaxPP: 15,
+		Effect: battle.EffectSleep},
+	{ID: MoveDrain, Type: battle.TypeGrass, Power: 40, Accuracy: battle.AccuracyPercent(100), MaxPP: 10,
+		Effect: battle.EffectDrain},
+	{ID: MoveBurst, Type: battle.TypeNormal, Power: 170, Accuracy: battle.AccuracyPercent(100), MaxPP: 5,
+		Effect: battle.EffectExplode},
+	{ID: MoveNeedles, Type: battle.TypeBug, Power: 14, Accuracy: battle.AccuracyPercent(85), MaxPP: 20,
+		Effect: battle.EffectMultiHit},
+	{ID: MoveDash, Type: battle.TypePsychic, Power: 0, Accuracy: battle.AccuracyPercent(100), MaxPP: 30,
+		Effect: battle.EffectSpeedUp2},
 }

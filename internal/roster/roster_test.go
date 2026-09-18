@@ -311,3 +311,51 @@ func TestRosterDataDrivesABattle(t *testing.T) {
 		t.Errorf("first to move = %v, want %v", used.Side, battle.Player1)
 	}
 }
+
+// 技の効果と発生率がYTA-19で確定した値と一致する。
+//
+// 発生率は実機と同じ「百分率 * 255 / 100 + 1」の表現。10%は26、30%は77、33%は85。
+func TestMoveEffects(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		id     battle.MoveID
+		effect battle.MoveEffect
+		chance int
+	}{
+		{MoveSlam, battle.EffectParalyze, 77},
+		{MoveSpark, battle.EffectParalyze, 26},
+		{MoveIcestorm, battle.EffectFreeze, 26},
+		{MoveMindblast, battle.EffectSpecialDown, 85},
+		{MoveOverdrive, battle.EffectRecharge, 0},
+		{MoveBurst, battle.EffectExplode, 0},
+		{MoveNeedles, battle.EffectMultiHit, 0},
+		{MoveDrain, battle.EffectDrain, 0},
+		{MoveNumb, battle.EffectParalyze, 0},
+		{MoveSlumber, battle.EffectSleep, 0},
+		{MoveSpores, battle.EffectSleep, 0},
+		{MoveMend, battle.EffectHeal, 0},
+		{MoveDoze, battle.EffectRest, 0},
+		{MoveDash, battle.EffectSpeedUp2, 0},
+		{MoveQuake, battle.EffectNone, 0},
+		{MoveTide, battle.EffectNone, 0},
+	}
+
+	if len(tests) != len(moves) {
+		t.Fatalf("table covers %d moves, want %d", len(tests), len(moves))
+	}
+
+	data := Data()
+	for _, tt := range tests {
+		move, err := data.LookupMove(tt.id)
+		if err != nil {
+			t.Fatalf("LookupMove(%q) error = %v", tt.id, err)
+		}
+		if move.Effect != tt.effect {
+			t.Errorf("%q effect = %v, want %v", tt.id, move.Effect, tt.effect)
+		}
+		if move.EffectChance != tt.chance {
+			t.Errorf("%q effect chance = %d, want %d", tt.id, move.EffectChance, tt.chance)
+		}
+	}
+}

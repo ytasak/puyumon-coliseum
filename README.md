@@ -128,7 +128,7 @@ internal/game/spritescene.go PoC の画面構成、キャラクター定義、�
 internal/game/input.go      マウス / タッチの取得
 internal/sprite/            複数 Emoji を 1 体として定義・描画する Composite Sprite 層
 internal/anim/              アニメーションの状態管理と Emoji particle
-internal/battle/            Battle Engine の domain model・タイプ相性・ダメージ計算・状態異常・seeded RNG（UI 非依存）
+internal/battle/            Battle Engine。domain model・タイプ相性・ダメージ・状態異常・turn resolver（UI 非依存）
 docs/mobile-safari-poc.md   iPhone Safari / iframe 検証の手順と記録（YTA-10）
 docs/wasm-delivery.md       本番配信時の圧縮手順と実測サイズ（YTA-12）
 docs/loading-experience.md  初回ロード中の表示と、回線別のロード時間（YTA-13）
@@ -159,6 +159,7 @@ platform 固有の処理（ウィンドウ設定・HTTP 配信・ブラウザ bo
 乱数は `RNG` として外から渡すため、同じ初期状態・同じ行動列・同じ seed からいつでも同じ結果を再現できる。
 キャラクターや技は識別子（`SpeciesID` / `MoveID`）で参照するだけで、domain 側にキャラクター固有の分岐を持たせない。
 タイプ相性のようなゲーム定義はデータとして持ち、ロジックはそれを解釈するだけにしている。
+1 turn の解決は `Resolver` が担い、状態・行動・乱数から次の状態と Event 列を返す。UI は呼ばない。
 
 `internal/anim` はアニメーションの**状態**だけを持ち、キャラクター定義も base transform も持たない。
 描画に使う transform は毎回 base から計算し直すため、再生を繰り返してもずれが蓄積しない。
@@ -205,6 +206,12 @@ Linear に明示されていない箇所について、以下を採用した。�
 | 乱数 | splitmix64 を自前実装し、`RNG` interface で注入する | 生成列をこのリポジトリのコードだけで固定する。標準ライブラリの版差で golden test が壊れるのを避ける。global state に依存しないので、同じ seed から必ず同じ対戦を再現できる |
 | 乱数を状態に含めるか | 含めない。`BattleState` は値として複製できる pure な状態のままにする | 状態を複製しても乱数列が分岐しない。seed の管理は resolver 側の責務になる |
 | キャラクター・技の参照 | `SpeciesID` / `MoveID` という識別子だけを持つ | 実データの定義は後続 Issue の範囲。domain 側がキャラクター名で分岐しない構造を最初から守る |
+| turn の解決 | `ResolveTurn` が state / Action / RNG から次の状態と Event 列を返す。UI を呼ばない | 仕様書の方向性どおり。進行順は Linear の YTA-18 に書いた turn pipeline が正 |
+| 技・キャラクターのデータ | `Data` struct を外から渡し、engine は定義の形だけを持つ | 実データは別 Issue の範囲。実装が 1 つしかない段階で interface を切らない方針に従った |
+| replacement の表現 | 状態に専用フラグを置かず、`NeedsReplacement` で導出する。解決は `ResolveReplacement` で、turn は進めない | 「active が戦闘不能かつ控えが残っている」ことから決まるので、状態を二重に持たない |
+| 乱数の消費順 | 命中 → 急所 → ダメージ（pipeline と同じ順） | 実機はダメージ計算のあとに命中判定を行うが、ROM との bit 互換は非目標。順序を 1 つに統一して追いやすくする |
+| 交代時の reset | stat stages・反動・継続中の技を、退く側と出る側の両方で初期化する | Gen I ではこれらが場の側に紐づくため。major status と残り PP は引き継ぐ |
+| Event の追加 | `MoveMissed` / `Unaffected` / `ActionBlocked` を足した | 仕様書の Event 一覧は例示。外れた・相性で通らない・状態異常で動けないを区別できないと、UI が「何が起きたか」を復元できない |
 | ねむりの起床ターン | 目を覚ました turn は行動できない | Gen I の挙動。現代世代と違う点で、誤解されやすいので test でも固定している |
 | こおり | 自然解凍しない。解除は技の側から状態を消して行う | Gen I には自然解凍が無い。現代世代の「毎ターン 20% で溶ける」を持ち込まない |
 | 行動を妨げた理由の返し方 | 真偽値ではなく `StatusBlock`（ねむり / 起床 / こおり / まひ）で返す | 理由ごとに見せ方が変わる。Event の組み立ては turn resolver に任せ、この層は mechanics に絞る |

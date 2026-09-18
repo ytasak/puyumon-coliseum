@@ -38,6 +38,17 @@ type Move struct {
 
 	// HighCritRatio は急所率の高い技か。Generation Iでは閾値が8倍になる。
 	HighCritRatio bool
+
+	// Effect はダメージ以外に起こすこと。
+	//
+	// 威力が0の技はこの効果そのものが技の内容になる。威力のある技では
+	// ダメージのあとに起きる追加効果を表す。
+	Effect MoveEffect
+
+	// EffectChance は追加効果の発生率。0〜255で、0なら確定効果か効果なし。
+	//
+	// 実機と同じ表現で、例えば30%は 30 * 255 / 100 + 1 = 77 になる。
+	EffectChance int
 }
 
 // Species はキャラクターの定義のうち、Battle Engineが必要とする分。

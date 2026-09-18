@@ -260,46 +260,103 @@ func (r *Resolver) takeTurn(state *BattleState, side Side, action MoveAction) ([
 	if err != nil {
 		return nil, err
 	}
+	defenderTyping, err := r.typing(*state, side.Opponent())
+	if err != nil {
+		return nil, err
+	}
 
 	// PPは命中判定より前に消費する。技が外れても減る。
 	attacker.Moves[action.Slot].PP--
 	events := []Event{MoveUsed{Side: side, Slot: action.Slot, Move: move.ID}}
 
-	defender := state.Players[side.Opponent()].ActivePokemon()
-	if !Hits(r.RNG, move.Accuracy, attacker.Stages.Accuracy, defender.Stages.Evasion) {
-		events = append(events, MoveMissed{Side: side})
-		return append(events, r.residual(state, side)...), nil
+	// 自爆は命中判定より前に使用者を戦闘不能にする。外れても倒れる（実機の挙動）。
+	exploded := move.Effect == EffectExplode
+	if exploded {
+		selfDestruct(attacker)
 	}
 
 	if move.Power > 0 {
-		hit, fainted, err := r.strike(state, side, move)
-		events = append(events, hit...)
+		if !r.hits(state, side, move) {
+			events = append(events, MoveMissed{Side: side})
+			return r.endTurn(state, side, events, exploded), nil
+		}
+
+		hit, damage, fainted, err := r.strike(state, side, move)
 		if err != nil {
 			return nil, err
 		}
-		if fainted {
-			// 相手を倒したturnは自分の継続ダメージが発生しない（実機の挙動）。
-			return events, nil
+		events = append(events, hit...)
+
+		// 吸収は相手を倒したturnでも起きる。実機もこの効果だけは最後まで処理する。
+		if move.Effect == EffectDrain {
+			events = append(events, applyDrain(state, side, damage)...)
 		}
+		if fainted {
+			defenderSide := side.Opponent()
+			events = append(events, Fainted{Side: defenderSide, Index: state.Players[defenderSide].Active})
+		} else {
+			events = append(events, r.applySideEffect(state, side, move, defenderTyping)...)
+		}
+	} else {
+		// 威力0の技は命中判定も効果の側で行う。実機は効果ごとに判定の有無と
+		// 順序が違い、反動中の相手を眠らせる場合のように判定しないものもある。
+		events = append(events, r.applyMoveEffect(state, side, move, defenderTyping)...)
 	}
-	return append(events, r.residual(state, side)...), nil
+
+	return r.endTurn(state, side, events, exploded), nil
+}
+
+// endTurn は手番の後始末をする。
+//
+// 自爆した使用者をここで戦闘不能にし、そうでなければ継続ダメージを処理する。
+// 相手を倒したturnは継続ダメージが起きない。
+func (r *Resolver) endTurn(state *BattleState, side Side, events []Event, exploded bool) []Event {
+	if exploded {
+		return append(events, Fainted{Side: side, Index: state.Players[side].Active})
+	}
+	if state.Players[side].ActivePokemon().Fainted() {
+		return events
+	}
+	if state.Players[side.Opponent()].ActivePokemon().Fainted() {
+		return events
+	}
+	return append(events, r.residual(state, side)...)
+}
+
+// hits は命中判定を行う。
+func (r *Resolver) hits(state *BattleState, side Side, move Move) bool {
+	attacker := state.Players[side].ActivePokemon()
+	defender := state.Players[side.Opponent()].ActivePokemon()
+
+	return Hits(r.RNG, move.Accuracy, attacker.Stages.Accuracy, defender.Stages.Evasion)
+}
+
+// typing は場に出ているPokemonのタイプ構成を返す。
+func (r *Resolver) typing(state BattleState, side Side) (Typing, error) {
+	player := state.Players[side]
+
+	species, err := r.Data.LookupSpecies(player.Team[player.Active].Species)
+	if err != nil {
+		return Typing{}, err
+	}
+	return species.Typing, nil
 }
 
 // strike は命中した技のダメージを適用する。
 //
-// 2つ目の戻り値は、この技で相手が戦闘不能になったかどうか。
-func (r *Resolver) strike(state *BattleState, side Side, move Move) ([]Event, bool, error) {
+// 戻り値は順に、起きたEvent、与えた合計ダメージ、相手が戦闘不能になったかどうか。
+func (r *Resolver) strike(state *BattleState, side Side, move Move) ([]Event, int, bool, error) {
 	defenderSide := side.Opponent()
 	attacker := state.Players[side].ActivePokemon()
 	defender := state.Players[defenderSide].ActivePokemon()
 
 	attackerSpecies, err := r.Data.LookupSpecies(attacker.Species)
 	if err != nil {
-		return nil, false, err
+		return nil, 0, false, err
 	}
 	defenderSpecies, err := r.Data.LookupSpecies(defender.Species)
 	if err != nil {
-		return nil, false, err
+		return nil, 0, false, err
 	}
 
 	critical := IsCritical(r.RNG, attackerSpecies.BaseSpeed, move.HighCritRatio)
@@ -314,28 +371,47 @@ func (r *Resolver) strike(state *BattleState, side Side, move Move) ([]Event, bo
 		AttackerStages: attacker.Stages,
 		DefenderStages: defender.Stages,
 		Critical:       critical,
+		HalveDefense:   move.Effect == EffectExplode,
 	})
 
 	// 相性で通らなかった場合は急所も報告しない。
 	if damage == 0 {
-		return []Event{Unaffected{Side: side}}, false, nil
+		return []Event{Unaffected{Side: side}}, 0, false, nil
 	}
 
 	var events []Event
 	if critical {
 		events = append(events, CriticalHit{Side: defenderSide})
 	}
-	if damage > defender.CurrentHP {
-		damage = defender.CurrentHP
-	}
-	defender.CurrentHP -= damage
-	events = append(events, Damage{Side: defenderSide, Amount: damage, RemainingHP: defender.CurrentHP})
 
-	if defender.Fainted() {
-		events = append(events, Fainted{Side: defenderSide, Index: state.Players[defenderSide].Active})
-		return events, true, nil
+	// 多段ヒットはダメージを1度だけ求め、同じ値を当たった回数ぶん与える。
+	// 途中で相手が倒れたらそこで止まる（実機の挙動）。
+	hits := 1
+	if move.Effect == EffectMultiHit {
+		hits = multiHitCount(r.RNG)
 	}
-	return events, false, nil
+
+	total, landed := 0, 0
+	for i := 0; i < hits; i++ {
+		dealt := damage
+		if dealt > defender.CurrentHP {
+			dealt = defender.CurrentHP
+		}
+		defender.CurrentHP -= dealt
+		total += dealt
+		landed++
+
+		events = append(events, Damage{Side: defenderSide, Amount: dealt, RemainingHP: defender.CurrentHP})
+		if defender.Fainted() {
+			break
+		}
+	}
+	if move.Effect == EffectMultiHit {
+		events = append(events, MultiHit{Side: side, Hits: landed})
+	}
+
+	// 戦闘不能のEventは、吸収のように相手を倒しても起きる効果のあとで出す。
+	return events, total, defender.Fainted(), nil
 }
 
 // residual は毒・やけどの継続ダメージを適用する。

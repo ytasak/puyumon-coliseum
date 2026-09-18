@@ -46,6 +46,11 @@ type DamageInput struct {
 
 	// Critical は急所かどうか。
 	Critical bool
+
+	// HalveDefense は防御側の能力値を半分にして計算するか。
+	//
+	// Generation Iの自爆系がこの扱いになる。半分にした結果が0になる場合は1にする。
+	HalveDefense bool
 }
 
 // BaseDamage は乱数を適用する前のダメージを返す。
@@ -113,6 +118,14 @@ func (in DamageInput) offensiveStats() (attack, defense int) {
 		if !in.Critical {
 			attack = battleStat(attack, in.AttackerStages.Attack)
 			defense = battleStat(defense, in.DefenderStages.Defense)
+		}
+	}
+
+	// 自爆系は防御側の能力値を半分にしてから計算する。
+	if in.HalveDefense {
+		defense /= 2
+		if defense < 1 {
+			defense = 1
 		}
 	}
 

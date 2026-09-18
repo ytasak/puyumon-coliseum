@@ -52,6 +52,25 @@ const (
 	speciesRunner  = SpeciesID("runner")  // みず
 	speciesTarget  = SpeciesID("target")  // みず
 	speciesPhantom = SpeciesID("phantom") // ゴースト
+	speciesPlain   = SpeciesID("plain")   // ノーマル
+	speciesFrost   = SpeciesID("frost")   // こおり
+	speciesEarth   = SpeciesID("earth")   // じめん
+)
+
+// 効果を持つtest用の技。
+const (
+	moveShock  = MoveID("shock")  // ノーマル威力85・まひ30%
+	moveChill  = MoveID("chill")  // こおり威力95・こおり10%
+	moveMind   = MoveID("mind")   // エスパー威力90・Special下降33%
+	moveBeam   = MoveID("beam")   // ノーマル威力150・反動
+	moveBoom   = MoveID("boom")   // ノーマル威力170・自爆
+	moveJab    = MoveID("jab")    // むし威力14・多段
+	moveSap    = MoveID("sap")    // くさ威力40・吸収
+	moveZap    = MoveID("zap")    // でんき威力0・確定まひ
+	moveLull   = MoveID("lull")   // ノーマル威力0・ねむり
+	moveRelief = MoveID("relief") // ノーマル威力0・回復
+	moveNap    = MoveID("nap")    // エスパー威力0・Rest
+	moveHaste  = MoveID("haste")  // エスパー威力0・Speed+2
 )
 
 func testData() Data {
@@ -60,11 +79,39 @@ func testData() Data {
 			moveTackle: {ID: moveTackle, Type: TypeNormal, Power: 85, Accuracy: MaxAccuracy, MaxPP: 15},
 			moveQuick:  {ID: moveQuick, Type: TypeNormal, Power: 40, Accuracy: MaxAccuracy, MaxPP: 30, Priority: 1},
 			moveShaky:  {ID: moveShaky, Type: TypeNormal, Power: 85, Accuracy: AccuracyPercent(75), MaxPP: 10},
+
+			moveShock: {ID: moveShock, Type: TypeNormal, Power: 85, Accuracy: MaxAccuracy, MaxPP: 15,
+				Effect: EffectParalyze, EffectChance: EffectChancePercent(30)},
+			moveChill: {ID: moveChill, Type: TypeIce, Power: 95, Accuracy: MaxAccuracy, MaxPP: 10,
+				Effect: EffectFreeze, EffectChance: EffectChancePercent(10)},
+			moveMind: {ID: moveMind, Type: TypePsychic, Power: 90, Accuracy: MaxAccuracy, MaxPP: 10,
+				Effect: EffectSpecialDown, EffectChance: EffectChancePercent(33)},
+			moveBeam: {ID: moveBeam, Type: TypeNormal, Power: 150, Accuracy: MaxAccuracy, MaxPP: 5,
+				Effect: EffectRecharge},
+			moveBoom: {ID: moveBoom, Type: TypeNormal, Power: 170, Accuracy: MaxAccuracy, MaxPP: 5,
+				Effect: EffectExplode},
+			moveJab: {ID: moveJab, Type: TypeBug, Power: 14, Accuracy: MaxAccuracy, MaxPP: 20,
+				Effect: EffectMultiHit},
+			moveSap: {ID: moveSap, Type: TypeGrass, Power: 40, Accuracy: MaxAccuracy, MaxPP: 10,
+				Effect: EffectDrain},
+			moveZap: {ID: moveZap, Type: TypeElectric, Power: 0, Accuracy: MaxAccuracy, MaxPP: 20,
+				Effect: EffectParalyze},
+			moveLull: {ID: moveLull, Type: TypeNormal, Power: 0, Accuracy: MaxAccuracy, MaxPP: 10,
+				Effect: EffectSleep},
+			moveRelief: {ID: moveRelief, Type: TypeNormal, Power: 0, Accuracy: MaxAccuracy, MaxPP: 20,
+				Effect: EffectHeal},
+			moveNap: {ID: moveNap, Type: TypePsychic, Power: 0, Accuracy: MaxAccuracy, MaxPP: 10,
+				Effect: EffectRest},
+			moveHaste: {ID: moveHaste, Type: TypePsychic, Power: 0, Accuracy: MaxAccuracy, MaxPP: 30,
+				Effect: EffectSpeedUp2},
 		},
 		Species: map[SpeciesID]Species{
 			speciesRunner:  {ID: speciesRunner, Typing: SingleType(TypeWater), BaseSpeed: 110},
 			speciesTarget:  {ID: speciesTarget, Typing: SingleType(TypeWater), BaseSpeed: 100},
 			speciesPhantom: {ID: speciesPhantom, Typing: SingleType(TypeGhost), BaseSpeed: 110},
+			speciesPlain:   {ID: speciesPlain, Typing: SingleType(TypeNormal), BaseSpeed: 100},
+			speciesFrost:   {ID: speciesFrost, Typing: SingleType(TypeIce), BaseSpeed: 100},
+			speciesEarth:   {ID: speciesEarth, Typing: SingleType(TypeGround), BaseSpeed: 100},
 		},
 	}
 }

@@ -116,12 +116,19 @@ go test ./...
 go build ./...
 ```
 
+balance simulation を回して集計結果を JSON で得る。集計の読み方は Linear（YTA-23 以降）が正。
+
+```sh
+go run ./cmd/balance -trials 50 -first-seed 1 > baseline.json
+```
+
 ## ディレクトリ構成
 
 ```text
 Makefile                    build / run / 検証手順
 cmd/game/main.go            エントリポイント。ウィンドウ設定とゲームループの起動のみ
 cmd/serve/main.go           WASM 動作確認用のローカル静的ファイルサーバ
+cmd/balance/main.go         balance simulation の batch 実行。集計結果を JSON で標準出力へ書く
 internal/game/game.go       Game 型（ebiten.Game の Update / Draw）と描画
 internal/game/layout.go     論理解像度の定数と Layout
 internal/game/spritescene.go PoC の画面構成、キャラクター定義、タップ領域
@@ -131,6 +138,7 @@ internal/anim/              アニメーションの状態管理と Emoji partic
 internal/battle/            Battle Engine。domain model・タイプ相性・ダメージ・状態異常・turn resolver（UI 非依存）
 internal/roster/            6 キャラクターと固定 move set のデータ（UI 非依存）
 internal/simulation/        Battle Engine を UI なしで回す simulation harness（UI 非依存）
+internal/balance/           roster combination の総当たりを集計して balance の指標にする層（UI 非依存）
 docs/mobile-safari-poc.md   iPhone Safari / iframe 検証の手順と記録（YTA-10）
 docs/wasm-delivery.md       本番配信時の圧縮手順と実測サイズ（YTA-12）
 docs/loading-experience.md  初回ロード中の表示と、回線別のロード時間（YTA-13）
@@ -171,6 +179,10 @@ platform 固有の処理（ウィンドウ設定・HTTP 配信・ブラウザ bo
 この層の責務は「scenario を進める」「結果をまとめる」「上限で止める」の 3 つだけで、
 engine のロジックを test 側へ写し取らないための境界でもある。
 後続のバランス検証がそのまま呼べるように、test helper ではなく production のコードとして置いている。
+
+`internal/balance` はその simulation を大量に回して**数えるだけ**の層で、対戦のルールも行動の選び方も持たない。
+返すのは side 別・combination 別・species 別の内訳、matchup matrix、turn 分布といった観測値で、
+balance の合否は判定しない。どこからを偏りと見るかは Report を読む側が決める。
 
 `internal/anim` はアニメーションの**状態**だけを持ち、キャラクター定義も base transform も持たない。
 描画に使う transform は毎回 base から計算し直すため、再生を繰り返してもずれが蓄積しない。
@@ -253,6 +265,13 @@ Linear に明示されていない箇所について、以下を採用した。�
 | 代表 scenario の作り方 | 両者の行動を script で固定し、急所・ねむり・こおりが 1 本へ収まる seed を選んだ | 交代・状態異常・急所・戦闘不能・反動（YTA-19）を 11 turn で通せる。含めるべき挙動が抜けた scenario へ差し替わらないよう、内容の検査も test に置いた |
 | 再現性の確かめ方 | golden 値ではなく、同じ Config を 2 回実行して state と Event 列が完全に一致することで見る | golden は「変わったこと」を、この test は「毎回同じであること」を担保する。役割が違う |
 | headless の担保 | 依存を辿って Ebitengine が混ざっていないことを test で検査する | package 自身の import を見るだけでは、`internal/battle` や `internal/roster` 経由の混入を防げない |
+| balance 集計の位置 | `internal/balance` を新設し、`internal/simulation` を呼ぶ側に置く | simulation は「1 対戦を回す」、balance は「多数回して指標に落とす」。指標を harness へ混ぜると、対戦を回すだけの用途にも balance の都合が入り込む |
+| seed の配り方 | すべての matchup へ同じ seed 列（`FirstSeed` から `Trials` 個）を配る | combination 間の差が seed の引きの差に埋もれないようにする（common random numbers）。matchup ごとに別の seed にすると、試行数が少ないときに引きの差が combination の差に見えてしまう |
+| 自分自身との対戦 | 総当たりの対角も回し、集計に含める | 同じ team 同士は roster 差が消えて side 差だけが残るので、先攻・後攻の非対称性を読むのに使える |
+| 未決着の扱い | 勝敗にも引き分けにも入れず `Unresolved` で数え、turn 分布からは外す | 未決着の turn 数は必ず上限と同じ値になり、分布の末尾へ実態のない山を作る |
+| 勝率の持ち方 | Report は件数だけを持ち、勝率は method で出す | 件数と割合を二重に持たない。JSON へ出るのは件数なので、分母の取り方は読み手が選べる |
+| batch の並列化 | しない | 20,000 対戦で約 1 秒。速くするために実行順を崩すと、再現性の根拠が「集計側で吸収している」になる |
+| balance の合否 | runner では判定しない | まず現状の分布を観測する段階（YTA-22）。閾値を先に置くと、観測する前に結論の枠が決まる。判断は Linear 側で行う |
 | ゴースト技 → エスパー | 0×（効かない）。出荷されたとおり | 本来は効果ばつぐんの意図だったとされる実装ミスだが、初代の対戦を決定づけた挙動のため維持する。Product Owner 判断 |
 | 相性倍率の持ち方 | 100 を等倍とする整数 | 0.25 / 0.5 / 2 / 4 を誤差なく扱える。ただし Gen I はダメージへ防御側のタイプごとに掛けて都度切り捨てるため、ダメージ計算では合成値ではなく `Against` をタイプごとに使う |
 | stage 倍率の持ち方 | 分子・分母のまま持つ（`25/100` 〜 `4/1`） | Gen I は整数演算で掛けるので、小数へ直すと端数の出る値で結果がずれる。値は pokered の `data/battle/stat_modifiers.asm` と一致 |

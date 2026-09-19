@@ -4,6 +4,7 @@
 *.wasm
 *.exe
 web/wasm_exec.js
+/baseline.json
 
 # Go
 *.test

@@ -19,11 +19,13 @@ func main() {
 	firstSeed := flag.Uint64("first-seed", 0, "first seed")
 	trials := flag.Int("trials", 10, "battles per ordered matchup")
 	maxTurns := flag.Int("max-turns", 0, "turn limit per battle (0 uses the default)")
+	policy := flag.String("policy", string(balance.DefaultPolicy), "action policy: first_usable or uniform_usable")
 	flag.Parse()
 
 	report, err := balance.Run(balance.Config{
 		FirstSeed: *firstSeed,
 		Trials:    *trials,
+		Policy:    balance.Policy(*policy),
 		MaxTurns:  *maxTurns,
 	})
 	if err != nil {

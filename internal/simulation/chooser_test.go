@@ -202,13 +202,171 @@ func TestScriptCreatesFallbackOnce(t *testing.T) {
 	}
 }
 
+// stubRNG は決められた値を順に返すtest用のRNG。
+//
+// 尽きたら先頭へ戻る。引かれた回数も数える。
+type stubRNG struct {
+	values []int
+	calls  int
+}
+
+// IntN は次の値をnで丸めて返す。
+func (r *stubRNG) IntN(n int) int {
+	value := r.values[r.calls%len(r.values)]
+	r.calls++
+	return value % n
+}
+
+// TestUniformUsablePicksFromUsableMoves は使える技の中から乱数で選ぶことを確かめる。
+func TestUniformUsablePicksFromUsableMoves(t *testing.T) {
+	state := testState(t)
+	rng := &stubRNG{values: []int{0, 1, 2, 3}}
+	chooser := UniformUsable{RNG: rng}
+
+	for i := 0; i < battle.MoveSlots; i++ {
+		want := battle.MoveAction{Slot: i}
+		if got := chooser.Action(state, battle.Player1); got != want {
+			t.Errorf("%d回目のAction() = %v, want %v", i+1, got, want)
+		}
+	}
+	if rng.calls != battle.MoveSlots {
+		t.Errorf("引いた乱数の数 = %d, want %d", rng.calls, battle.MoveSlots)
+	}
+}
+
+// TestUniformUsableSkipsEmptyPP はPPの無い技を候補から外すことを確かめる。
+//
+// 乱数が0を返しても、PPの切れたslot 0は選ばない。
+func TestUniformUsableSkipsEmptyPP(t *testing.T) {
+	state := testState(t)
+	player := &state.Players[battle.Player1]
+	player.Team[player.Active].Moves[0].PP = 0
+	player.Team[player.Active].Moves[1].PP = 0
+
+	chooser := UniformUsable{RNG: &stubRNG{values: []int{0}}}
+	if got := chooser.Action(state, battle.Player1); got != (battle.MoveAction{Slot: 2}) {
+		t.Errorf("Action() = %v, want slot 2", got)
+	}
+}
+
+// TestUniformUsableDrawsEvenWithOneChoice は候補が1つでも乱数を1つ引くことを確かめる。
+//
+// 行動を選ぶたびに必ず1つ消費することで、乱数列の位置が
+// 「その時点で何技使えたか」に左右されなくなる。
+func TestUniformUsableDrawsEvenWithOneChoice(t *testing.T) {
+	state := testState(t)
+	player := &state.Players[battle.Player1]
+	for slot := 1; slot < battle.MoveSlots; slot++ {
+		player.Team[player.Active].Moves[slot].PP = 0
+	}
+
+	rng := &stubRNG{values: []int{0}}
+	if got := (UniformUsable{RNG: rng}).Action(state, battle.Player1); got != (battle.MoveAction{Slot: 0}) {
+		t.Errorf("Action() = %v, want slot 0", got)
+	}
+	if rng.calls != 1 {
+		t.Errorf("引いた乱数の数 = %d, want 1", rng.calls)
+	}
+}
+
+// TestUniformUsableSwitchesWithoutUsableMove は使える技が無ければ交代し、
+// そのときは乱数を引かないことを確かめる。
+func TestUniformUsableSwitchesWithoutUsableMove(t *testing.T) {
+	state := testState(t)
+	player := &state.Players[battle.Player1]
+	for slot := range player.Team[player.Active].Moves {
+		player.Team[player.Active].Moves[slot].PP = 0
+	}
+
+	rng := &stubRNG{values: []int{0}}
+	if got := (UniformUsable{RNG: rng}).Action(state, battle.Player1); got != (battle.SwitchAction{Target: 1}) {
+		t.Errorf("Action() = %v, want target 1", got)
+	}
+	if rng.calls != 0 {
+		t.Errorf("引いた乱数の数 = %d, want 0", rng.calls)
+	}
+}
+
+// TestUniformUsableReplacementIsDeterministic は交代先が乱数に依らないことを確かめる。
+func TestUniformUsableReplacementIsDeterministic(t *testing.T) {
+	state := testState(t)
+	state.Players[battle.Player1].Team[0].CurrentHP = 0
+
+	rng := &stubRNG{values: []int{1}}
+	if got := (UniformUsable{RNG: rng}).Replacement(state, battle.Player1); got != (battle.SwitchAction{Target: 1}) {
+		t.Errorf("Replacement() = %v, want target 1", got)
+	}
+	if rng.calls != 0 {
+		t.Errorf("引いた乱数の数 = %d, want 0", rng.calls)
+	}
+}
+
+// TestUniformUsablePolicyStartsFromTheSeed はfactoryが呼ばれるたびに
+// 同じseedから始まるChooserを返すことを確かめる。
+func TestUniformUsablePolicyStartsFromTheSeed(t *testing.T) {
+	state := testState(t)
+	factory := UniformUsablePolicy(42)
+
+	first := factory()
+	firstActions := []battle.Action{first.Action(state, battle.Player1), first.Action(state, battle.Player1)}
+
+	second := factory()
+	for i, want := range firstActions {
+		if got := second.Action(state, battle.Player1); got != want {
+			t.Errorf("2つ目のChooserの%d回目 = %v, want %v", i+1, got, want)
+		}
+	}
+}
+
+// TestUniformUsablePolicySeedsDiffer は別のseedなら別の行動列になることを確かめる。
+func TestUniformUsablePolicySeedsDiffer(t *testing.T) {
+	state := testState(t)
+
+	const draws = 20
+	same := true
+	first, second := UniformUsablePolicy(1)(), UniformUsablePolicy(2)()
+	for i := 0; i < draws; i++ {
+		if first.Action(state, battle.Player1) != second.Action(state, battle.Player1) {
+			same = false
+			break
+		}
+	}
+	if same {
+		t.Errorf("seedを変えても%d回とも同じ行動を選んでいる", draws)
+	}
+}
+
 // TestFirstUsableStrugglesWithoutMovesOrReserve は使える技も控えも無ければ
 // Struggleを選ぶことを確かめる。
 //
 // ここで合法でない行動を返すと、resolverがinvalid actionを返して対戦が止まる。
 func TestFirstUsableStrugglesWithoutMovesOrReserve(t *testing.T) {
 	state := testState(t)
-	player := &state.Players[battle.Player1]
+	strandThe(&state, battle.Player1)
+
+	if got := (FirstUsable{}).Action(state, battle.Player1); got != (battle.StruggleAction{}) {
+		t.Errorf("Action() = %v, want StruggleAction", got)
+	}
+}
+
+// TestUniformUsableStrugglesWithoutMovesOrReserve はUniformUsableも
+// 同じ状況でStruggleを選び、そのとき乱数を引かないことを確かめる。
+func TestUniformUsableStrugglesWithoutMovesOrReserve(t *testing.T) {
+	state := testState(t)
+	strandThe(&state, battle.Player1)
+
+	rng := &stubRNG{values: []int{0}}
+	if got := (UniformUsable{RNG: rng}).Action(state, battle.Player1); got != (battle.StruggleAction{}) {
+		t.Errorf("Action() = %v, want StruggleAction", got)
+	}
+	if rng.calls != 0 {
+		t.Errorf("引いた乱数の数 = %d, want 0", rng.calls)
+	}
+}
+
+// strandThe は使える技も戦える控えも無い状態にする。Struggleしか残らない。
+func strandThe(state *battle.BattleState, side battle.Side) {
+	player := &state.Players[side]
 	for slot := range player.Team[player.Active].Moves {
 		player.Team[player.Active].Moves[slot].PP = 0
 	}
@@ -216,9 +374,5 @@ func TestFirstUsableStrugglesWithoutMovesOrReserve(t *testing.T) {
 		if i != player.Active {
 			player.Team[i].CurrentHP = 0
 		}
-	}
-
-	if got := (FirstUsable{}).Action(state, battle.Player1); got != (battle.StruggleAction{}) {
-		t.Errorf("Action() = %v, want StruggleAction", got)
 	}
 }

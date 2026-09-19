@@ -32,6 +32,12 @@ type Config struct {
 	// combination間の差がseedの引きの差に埋もれないようにする。
 	Trials int
 
+	// Policy は行動の選び方。空ならDefaultPolicyを使う。
+	//
+	// 同じrosterでも方針が違えば別の分布になる。何で測ったかが分からなくなると
+	// 数字を読み違えるので、Reportへも残す。
+	Policy Policy
+
 	// MaxTurns はsimulationを打ち切るturn数。0なら simulation.DefaultMaxTurns を使う。
 	//
 	// simulation側の安全装置をそのまま渡すだけで、対戦のルールではない。
@@ -52,6 +58,12 @@ func (c Config) normalize() (Config, error) {
 	}
 	if c.MaxTurns == 0 {
 		c.MaxTurns = simulation.DefaultMaxTurns
+	}
+	if c.Policy == "" {
+		c.Policy = DefaultPolicy
+	}
+	if err := c.Policy.validate(); err != nil {
+		return Config{}, err
 	}
 	return c, nil
 }

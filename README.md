@@ -120,6 +120,7 @@ balance simulation を回して集計結果を JSON で得る。集計の読み�
 
 ```sh
 go run ./cmd/balance -trials 50 -first-seed 1 > baseline.json
+go run ./cmd/balance -trials 50 -first-seed 1 -policy uniform_usable > uniform.json
 ```
 
 ## ディレクトリ構成
@@ -264,7 +265,7 @@ Linear に明示されていない箇所について、以下を採用した。�
 | simulation harness の位置 | `internal/simulation` に production package として置く | 後続の Balance milestone からそのまま呼べるようにする。test helper にすると test からしか使えない。Product Owner 判断（YTA-21） |
 | simulation の責務 | scenario を進める・結果をまとめる・上限で止める、の 3 つだけ | 対戦のルールを二重に持たない。ここに判定を書くと engine と食い違っても気づけない |
 | turn 上限 | 対戦ルールには入れず simulation 側だけが持つ。到達したら `TurnLimitReached` を立て、`BattleState.Status` は `Ongoing` のままにする | 終わらない simulation を止めるための安全装置であって、ゲームのルールではない。勝敗を捏造しない |
-| 行動の選び方 | `FirstUsable`（使える先頭の技）と `Script`（決めた順に返す）の 2 つだけ | 賢い Bot は Out of scope。大量 simulation と golden scenario に必要な最小限にとどめる |
+| 行動の選び方 | `FirstUsable`（使える先頭の技）、`UniformUsable`（使える技から一様ランダム）、`Script`（決めた順に返す）の 3 つだけ | 賢い Bot は Out of scope。`UniformUsable` は勝つための方針ではなく、`FirstUsable` の slot 0 偏りを崩して構造的な偏りと切り分けるための対照 |
 | `Config` が持つもの | Chooser の instance ではなく作り方（`ChooserFactory`）。`Run` ごとに新しい Chooser を作る | `Script` は「どこまで使ったか」を持つ。instance を持たせると同じ `Config` の 2 回目が途中から始まり、「同じ初期状態・同じ行動列・同じ seed」でなくなる。並列に回しても Chooser を共有しない |
 | 統合 golden の固定範囲 | 代表 scenario 1 本だけ Event 全文と final state を固定する。20 通りの総当たりでは固定しない | 目的は「mechanics を通した結果が意図せず変わったこと」の検出。個々の値の正しさは YTA-16〜YTA-19 の独立 golden が正 |
 | 代表 scenario の作り方 | 両者の行動を script で固定し、急所・ねむり・こおりが 1 本へ収まる seed を選んだ | 交代・状態異常・急所・戦闘不能・反動（YTA-19）を 11 turn で通せる。含めるべき挙動が抜けた scenario へ差し替わらないよう、内容の検査も test に置いた |
@@ -277,6 +278,10 @@ Linear に明示されていない箇所について、以下を採用した。�
 | 勝率の持ち方 | Report は件数だけを持ち、勝率は method で出す | 件数と割合を二重に持たない。JSON へ出るのは件数なので、分母の取り方は読み手が選べる |
 | batch の並列化 | しない | 20,000 対戦で約 1 秒。速くするために実行順を崩すと、再現性の根拠が「集計側で吸収している」になる |
 | balance の合否 | runner では判定しない | まず現状の分布を観測する段階（YTA-22）。閾値を先に置くと、観測する前に結論の枠が決まる。判断は Linear 側で行う |
+| 行動選択の乱数 | Battle Engine の乱数と分ける。`UniformUsable` は自分の `RNG` を持つ | engine の乱数列を行動選択で消費すると、方針を替えただけでダメージや命中までずれて比較にならない。「常に 0 を返す RNG なら `FirstUsable` と完全一致する」ことを test で固定している |
+| policy seed の決め方 | 対戦の seed と side から決める（`policySeedBase + battleSeed*2 + side`） | Config の seed 範囲と試行数だけで全 matchup の乱数が決まる。両 side へ別の seed を配るのは、同じ乱数列だと両者が同じ位置の技を選び続けてしまうため |
+| 候補が 1 つでも乱数を引く | `UniformUsable` は行動を選ぶたび必ず 1 つ消費する | 乱数列の位置が「何回選んだか」だけで決まり、その時点で何技使えたかに左右されない |
+| 既定の policy | 省略時は `FirstUsable` | YTA-23 の baseline を同じ config で再現できる状態を保つ。測った方針は Report に残す |
 | ゴースト技 → エスパー | 0×（効かない）。出荷されたとおり | 本来は効果ばつぐんの意図だったとされる実装ミスだが、初代の対戦を決定づけた挙動のため維持する。Product Owner 判断 |
 | 相性倍率の持ち方 | 100 を等倍とする整数 | 0.25 / 0.5 / 2 / 4 を誤差なく扱える。ただし Gen I はダメージへ防御側のタイプごとに掛けて都度切り捨てるため、ダメージ計算では合成値ではなく `Against` をタイプごとに使う |
 | stage 倍率の持ち方 | 分子・分母のまま持つ（`25/100` 〜 `4/1`） | Gen I は整数演算で掛けるので、小数へ直すと端数の出る値で結果がずれる。値は pokered の `data/battle/stat_modifiers.asm` と一致 |

@@ -2,6 +2,7 @@ package balance
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -329,12 +330,96 @@ func TestRunNormalisesConfig(t *testing.T) {
 	cfg := Config{FirstSeed: 7, Trials: 1}
 	report := runForTest(t, cfg)
 
-	want := Config{FirstSeed: 7, Trials: 1, MaxTurns: simulation.DefaultMaxTurns}
+	want := Config{FirstSeed: 7, Trials: 1, Policy: DefaultPolicy, MaxTurns: simulation.DefaultMaxTurns}
 	if report.Config != want {
 		t.Errorf("Report.Config = %+v, want %+v", report.Config, want)
 	}
 	if got := runForTest(t, report.Config); !reflect.DeepEqual(got, report) {
 		t.Error("Reportに載っているConfigで再実行したら結果が変わった")
+	}
+}
+
+// TestRunRecordsThePolicy は使った方針をReportへ残すことを確かめる。
+//
+// 方針が違えば分布も違う。何で測ったかがReportから分からないと、
+// あとから数字を読み違える。
+func TestRunRecordsThePolicy(t *testing.T) {
+	cfg := testConfig()
+	cfg.Policy = PolicyUniformUsable
+
+	if got := runForTest(t, cfg).Config.Policy; got != PolicyUniformUsable {
+		t.Errorf("Report.Config.Policy = %q, want %q", got, PolicyUniformUsable)
+	}
+}
+
+// TestRunDefaultsToFirstUsable は方針を省略したときにFirstUsableで回ることを確かめる。
+//
+// YTA-23のbaselineは方針を指定せずに測ったので、省略時の意味が変わると再現できなくなる。
+func TestRunDefaultsToFirstUsable(t *testing.T) {
+	omitted := testConfig()
+	omitted.Policy = ""
+	explicit := testConfig()
+	explicit.Policy = PolicyFirstUsable
+
+	report := runForTest(t, omitted)
+	if report.Config.Policy != PolicyFirstUsable {
+		t.Errorf("Report.Config.Policy = %q, want %q", report.Config.Policy, PolicyFirstUsable)
+	}
+	if !reflect.DeepEqual(report, runForTest(t, explicit)) {
+		t.Error("方針を省略した場合とFirstUsableを指定した場合で結果が違う")
+	}
+}
+
+// TestRunPolicyChangesTheReport は方針を変えれば結果が変わることを確かめる。
+func TestRunPolicyChangesTheReport(t *testing.T) {
+	first := testConfig()
+	uniform := testConfig()
+	uniform.Policy = PolicyUniformUsable
+
+	if reflect.DeepEqual(runForTest(t, first), runForTest(t, uniform)) {
+		t.Error("方針を変えてもReportが変わらない")
+	}
+}
+
+// TestRunUniformPolicyIsDeterministic はUniformUsableでも同じConfigから
+// 同じReportが再生成できることを確かめる。
+func TestRunUniformPolicyIsDeterministic(t *testing.T) {
+	cfg := testConfig()
+	cfg.Policy = PolicyUniformUsable
+
+	if !reflect.DeepEqual(runForTest(t, cfg), runForTest(t, cfg)) {
+		t.Error("同じConfigの2回目のReportが一致しない")
+	}
+}
+
+// TestRunRejectsUnknownPolicy は定義にない方針をerrorにすることを確かめる。
+//
+// 黙ってFirstUsableで回すと、別の方針で測ったつもりの数字が出てくる。
+func TestRunRejectsUnknownPolicy(t *testing.T) {
+	cfg := testConfig()
+	cfg.Policy = "greedy"
+
+	if _, err := Run(cfg); !errors.Is(err, ErrInvalidConfig) {
+		t.Errorf("Run() error = %v, want %v", err, ErrInvalidConfig)
+	}
+}
+
+// TestPolicySeedIsSeparatedFromTheBattleSeed は行動選択のseedが
+// 対戦のseedとも、もう一方のsideとも重ならないことを確かめる。
+func TestPolicySeedIsSeparatedFromTheBattleSeed(t *testing.T) {
+	seen := map[uint64]string{}
+	for battleSeed := uint64(0); battleSeed < 1000; battleSeed++ {
+		for _, side := range sides {
+			seed := policySeed(battleSeed, side)
+			if seed == battleSeed {
+				t.Fatalf("policySeed(%d, %v) が対戦のseedと同じ", battleSeed, side)
+			}
+			where := fmt.Sprintf("battleSeed %d の %v", battleSeed, side)
+			if previous, ok := seen[seed]; ok {
+				t.Fatalf("%s のseedが %s と重複している", where, previous)
+			}
+			seen[seed] = where
+		}
 	}
 }
 

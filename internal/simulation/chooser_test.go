@@ -335,3 +335,44 @@ func TestUniformUsablePolicySeedsDiffer(t *testing.T) {
 		t.Errorf("seedを変えても%d回とも同じ行動を選んでいる", draws)
 	}
 }
+
+// TestFirstUsableStrugglesWithoutMovesOrReserve は使える技も控えも無ければ
+// Struggleを選ぶことを確かめる。
+//
+// ここで合法でない行動を返すと、resolverがinvalid actionを返して対戦が止まる。
+func TestFirstUsableStrugglesWithoutMovesOrReserve(t *testing.T) {
+	state := testState(t)
+	strandThe(&state, battle.Player1)
+
+	if got := (FirstUsable{}).Action(state, battle.Player1); got != (battle.StruggleAction{}) {
+		t.Errorf("Action() = %v, want StruggleAction", got)
+	}
+}
+
+// TestUniformUsableStrugglesWithoutMovesOrReserve はUniformUsableも
+// 同じ状況でStruggleを選び、そのとき乱数を引かないことを確かめる。
+func TestUniformUsableStrugglesWithoutMovesOrReserve(t *testing.T) {
+	state := testState(t)
+	strandThe(&state, battle.Player1)
+
+	rng := &stubRNG{values: []int{0}}
+	if got := (UniformUsable{RNG: rng}).Action(state, battle.Player1); got != (battle.StruggleAction{}) {
+		t.Errorf("Action() = %v, want StruggleAction", got)
+	}
+	if rng.calls != 0 {
+		t.Errorf("引いた乱数の数 = %d, want 0", rng.calls)
+	}
+}
+
+// strandThe は使える技も戦える控えも無い状態にする。Struggleしか残らない。
+func strandThe(state *battle.BattleState, side battle.Side) {
+	player := &state.Players[side]
+	for slot := range player.Team[player.Active].Moves {
+		player.Team[player.Active].Moves[slot].PP = 0
+	}
+	for i := range player.Team {
+		if i != player.Active {
+			player.Team[i].CurrentHP = 0
+		}
+	}
+}

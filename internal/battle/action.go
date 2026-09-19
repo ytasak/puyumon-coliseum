@@ -36,6 +36,22 @@ func (a MoveAction) Validate() error {
 	return nil
 }
 
+// StruggleAction は使える技が1つも無いときの代替行動。
+//
+// 固定move setの技枠を使わないので、Slotのような指定を持たない。
+// この行動が取れるのは4技すべてのPPが0のときだけで、判断はresolverが状態と
+// 突き合わせて行う。控えが残っていればSwitchActionも引き続き合法で、
+// どちらを選ぶかはAction選択側の判断になる。
+type StruggleAction struct{}
+
+func (StruggleAction) action() {}
+
+// Validate は常に成功する。
+//
+// Struggleは行動の値としては常に成立する。使える状態かどうかは状態に依存するので、
+// resolverがvalidateActionで確かめる。
+func (StruggleAction) Validate() error { return nil }
+
 // SwitchAction は控えのPokemonと交代する行動。
 type SwitchAction struct {
 	// Target は場に出すPokemonのTeam内index。

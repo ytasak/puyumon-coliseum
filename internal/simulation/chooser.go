@@ -111,6 +111,7 @@ func (s *Script) fallbackChooser() Chooser {
 //
 // 大量のsimulationを回すための単純な方針で、勝ち筋を考えることはしない。
 // 使える技が無ければ、戦える控えのうちいちばん上へ交代する。
+// 控えも居なければStruggleを選ぶ。
 type FirstUsable struct{}
 
 // Action は使えるいちばん上の技を返す。
@@ -123,11 +124,11 @@ func (FirstUsable) Action(state battle.BattleState, side battle.Side) battle.Act
 			return battle.MoveAction{Slot: slot}
 		}
 	}
-	// 使える技が無ければ交代する。控えも居なければ先頭の技を返し、resolverの検証に委ねる。
+	// 使える技が無ければ交代する。控えも居なければStruggleしかない。
 	if reserve := player.Reserve(); len(reserve) > 0 {
 		return battle.SwitchAction{Target: reserve[0]}
 	}
-	return battle.MoveAction{Slot: 0}
+	return battle.StruggleAction{}
 }
 
 // Replacement は戦える控えのうちいちばん上を返す。

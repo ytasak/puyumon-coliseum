@@ -11,11 +11,18 @@ type Event interface {
 	event()
 }
 
+// NoMoveSlot は技枠を持たない行動を表すMoveUsed.Slotの値。
+//
+// Struggleは固定move setの技ではないので、この値になる。
+const NoMoveSlot = -1
+
 // MoveUsed は技を使ったこと。命中したかどうかは含まない。
+//
+// StruggleもこのEventで表す。そのときMoveはMoveStruggle、SlotはNoMoveSlotになる。
 type MoveUsed struct {
 	// Side は技を使った側。
 	Side Side
-	// Slot は使った技のMoves内index。
+	// Slot は使った技のMoves内index。技枠を使わないStruggleではNoMoveSlot。
 	Slot int
 	// Move は使った技の識別子。
 	Move MoveID

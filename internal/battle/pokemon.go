@@ -183,6 +183,18 @@ func (p *Pokemon) Fainted() bool {
 	return p.CurrentHP <= 0
 }
 
+// HasUsableMove は残りPPのある技が1つでもあるかを返す。
+//
+// これが偽のときだけStruggleを使える。Disable等の未実装mechanicは見ていない。
+func (p *Pokemon) HasUsableMove() bool {
+	for i := range p.Moves {
+		if p.Moves[i].Usable() {
+			return true
+		}
+	}
+	return false
+}
+
 // validate はPokemonが取り得ない値を含んでいないかを確かめる。
 func (p *Pokemon) validate() error {
 	if p.Level < MinLevel || p.Level > MaxLevel {

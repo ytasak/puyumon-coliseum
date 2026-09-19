@@ -91,7 +91,10 @@ func TestStruggleGetsSTAB(t *testing.T) {
 }
 
 // TestStruggleAgainstGhost はゴーストへノーマルが通らないことと、
-// それでも最低1の反動が返ることを確かめる。
+// そのturnは反動も起きないことを確かめる。
+//
+// 実機は相性で0ダメージになった時点でwMoveMissedが立ち、反動を含む
+// AlwaysHappenSideEffectsまで進まない。
 func TestStruggleAgainstGhost(t *testing.T) {
 	t.Parallel()
 
@@ -101,7 +104,7 @@ func TestStruggleAgainstGhost(t *testing.T) {
 	)
 	r := testResolver(struggleValues...)
 
-	_, events, err := r.ResolveTurn(state, StruggleAction{}, MoveAction{Slot: 0})
+	next, events, err := r.ResolveTurn(state, StruggleAction{}, MoveAction{Slot: 0})
 	if err != nil {
 		t.Fatalf("ResolveTurn() error = %v", err)
 	}
@@ -109,9 +112,11 @@ func TestStruggleAgainstGhost(t *testing.T) {
 	assertEvents(t, events, []Event{
 		MoveUsed{Side: Player1, Slot: NoMoveSlot, Move: MoveStruggle},
 		Unaffected{Side: Player1},
-		Damage{Side: Player1, Amount: 1, RemainingHP: 199},
 		blocked,
 	})
+	if got := next.Players[Player1].ActivePokemon().CurrentHP; got != 200 {
+		t.Errorf("使用者のHP = %d, want 200（反動を受けない）", got)
+	}
 }
 
 // TestStruggleOverkillRecoilsFromDealtDamage は相手を倒したときの反動が、

@@ -329,8 +329,8 @@ func (r *Resolver) takeTurn(state *BattleState, side Side, action Action) ([]Eve
 		if move.Effect == EffectDrain {
 			events = append(events, applyDrain(state, side, damage)...)
 		}
-		// Struggleの反動は相性で通らず与ダメージが0でも起きる。命中してここまで
-		// 進んだこと自体が条件で、最低1は必ず自分へ返る。
+		// Struggleの反動は相手を倒したturnでも起きる。ダメージを与えられなかった
+		// turnに起きないことはapplyRecoilが見る。
 		if move.Effect == EffectRecoil {
 			events = append(events, applyRecoil(state, side, damage)...)
 		}

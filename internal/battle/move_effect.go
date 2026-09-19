@@ -198,9 +198,14 @@ func applyDrain(state *BattleState, side Side, damage int) []Event {
 // Struggleの反動。Generation Iは実際に与えたダメージのfloor(1/2)で、最低1。
 // overkillした分は入らない（strikeが相手の残HPで切ったダメージを渡す）。
 //
-// 相手を倒したturnでも、相性で通らず与ダメージが0でも起きる。damage 0のときも
-// 最低1は自分へ返るので、命中したStruggleは必ず使用者のHPを削る。
+// 相手を倒したturnでも起きる。一方、タイプ相性で通らず与ダメージが0だったturnには
+// 起きない。実機はその時点でwMoveMissedが立ち、反動を含むAlwaysHappenSideEffectsまで
+// 進まないため。
 func applyRecoil(state *BattleState, side Side, damage int) []Event {
+	if damage <= 0 {
+		return nil
+	}
+
 	amount := damage / 2
 	if amount < 1 {
 		amount = 1

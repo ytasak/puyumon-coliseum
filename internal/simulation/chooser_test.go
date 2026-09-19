@@ -201,3 +201,24 @@ func TestScriptCreatesFallbackOnce(t *testing.T) {
 		t.Errorf("Fallbackを作った回数 = %d, want 1", created)
 	}
 }
+
+// TestFirstUsableStrugglesWithoutMovesOrReserve は使える技も控えも無ければ
+// Struggleを選ぶことを確かめる。
+//
+// ここで合法でない行動を返すと、resolverがinvalid actionを返して対戦が止まる。
+func TestFirstUsableStrugglesWithoutMovesOrReserve(t *testing.T) {
+	state := testState(t)
+	player := &state.Players[battle.Player1]
+	for slot := range player.Team[player.Active].Moves {
+		player.Team[player.Active].Moves[slot].PP = 0
+	}
+	for i := range player.Team {
+		if i != player.Active {
+			player.Team[i].CurrentHP = 0
+		}
+	}
+
+	if got := (FirstUsable{}).Action(state, battle.Player1); got != (battle.StruggleAction{}) {
+		t.Errorf("Action() = %v, want StruggleAction", got)
+	}
+}

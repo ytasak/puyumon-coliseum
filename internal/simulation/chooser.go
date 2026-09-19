@@ -137,3 +137,56 @@ func (FirstUsable) Replacement(state battle.BattleState, side battle.Side) battl
 	}
 	return battle.SwitchAction{Target: state.Players[side].Active}
 }
+
+// UniformUsable は使える技から一様ランダムに1つ選ぶChooser。
+//
+// FirstUsableはPPが切れるまで同じ技を撃ち続けるため、大量simulationの結果が
+// 「slot 0の質」に寄る。その偏りを崩すための対照用の方針で、勝ち筋を考えることはしない。
+//
+// 乱数はBattle Engineのものと分けて持つ。行動選択でengineの乱数列を消費すると、
+// 同じseedでもChooserを替えただけでダメージや命中の乱数がずれてしまう。
+//
+// RNGは必須。Runごとに新しいものを渡すため、ConfigへはUniformUsablePolicyで渡す。
+type UniformUsable struct {
+	// RNG は行動選択にだけ使う乱数。
+	RNG battle.RNG
+}
+
+// UniformUsablePolicy はseedから、Runごとに同じ行動列を再現するChooserFactoryを返す。
+//
+// Runのたびに新しいRNGを作るので、同じConfigを何度Runしても、並列に回しても同じ結果になる。
+func UniformUsablePolicy(seed uint64) ChooserFactory {
+	return func() Chooser {
+		return UniformUsable{RNG: battle.NewRand(seed)}
+	}
+}
+
+// Action は使える技から一様ランダムに1つ返す。
+//
+// 使える技が1つしかない場合も乱数を1つ引く。行動を選ぶたびに必ず1つ消費することで、
+// 乱数列の位置が「何回選んだか」だけで決まり、その時点で何技使えたかに左右されない。
+//
+// 使える技が無ければFirstUsableと同じ扱いにする。ここでは乱数を引かない。
+func (u UniformUsable) Action(state battle.BattleState, side battle.Side) battle.Action {
+	player := state.Players[side]
+	active := player.Team[player.Active]
+
+	usable := make([]int, 0, battle.MoveSlots)
+	for slot, move := range active.Moves {
+		if move.Usable() {
+			usable = append(usable, slot)
+		}
+	}
+	if len(usable) == 0 {
+		return FirstUsable{}.Action(state, side)
+	}
+	return battle.MoveAction{Slot: usable[u.RNG.IntN(len(usable))]}
+}
+
+// Replacement は戦える控えのうちいちばん上を返す。
+//
+// 交代先は決定論的でよい。乱数を引かないので、戦闘不能の起きた回数で
+// 行動選択の乱数列がずれることもない。
+func (UniformUsable) Replacement(state battle.BattleState, side battle.Side) battle.SwitchAction {
+	return FirstUsable{}.Replacement(state, side)
+}

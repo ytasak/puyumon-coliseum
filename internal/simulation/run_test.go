@@ -452,3 +452,68 @@ func TestCombinationsAreUnique(t *testing.T) {
 		t.Errorf("異なる組み合わせ = %d, want 20", len(seen))
 	}
 }
+
+// TestUniformUsableDoesNotTouchTheBattleRNG は行動選択の乱数が
+// Battle Engineの乱数と分かれていることを確かめる。
+//
+// 常に0を返すRNGを渡したUniformUsableは、使える技の先頭を選ぶのでFirstUsableと
+// 同じ行動列になる。もしChooserがengineの乱数を引いていれば、ダメージや命中の
+// 乱数がその分ずれて結果が変わる。両者が完全に一致することが分離の証拠になる。
+func TestUniformUsableDoesNotTouchTheBattleRNG(t *testing.T) {
+	cfg := Config{
+		Teams: [2][battle.TeamSize]battle.SpeciesID{
+			{roster.SpeciesBull, roster.SpeciesStar, roster.SpeciesJolt},
+			{roster.SpeciesPalm, roster.SpeciesCharm, roster.SpeciesWhale},
+		},
+		Seed:     goldenSeed,
+		MaxTurns: 100,
+	}
+
+	firstUsable, err := Run(cfg)
+	if err != nil {
+		t.Fatalf("FirstUsableのRun() error = %v", err)
+	}
+
+	always0 := func() Chooser { return UniformUsable{RNG: &stubRNG{values: []int{0}}} }
+	cfg.Choosers = [2]ChooserFactory{always0, always0}
+	uniform, err := Run(cfg)
+	if err != nil {
+		t.Fatalf("UniformUsableのRun() error = %v", err)
+	}
+
+	sameResult(t, "常に先頭を選ぶUniformUsable", uniform, firstUsable)
+}
+
+// TestUniformUsablePolicyIsDeterministic は同じseedのpolicyなら
+// 同じConfigから同じ結果になることを確かめる。
+func TestUniformUsablePolicyIsDeterministic(t *testing.T) {
+	cfg := Config{
+		Teams: [2][battle.TeamSize]battle.SpeciesID{
+			{roster.SpeciesBull, roster.SpeciesStar, roster.SpeciesJolt},
+			{roster.SpeciesPalm, roster.SpeciesCharm, roster.SpeciesWhale},
+		},
+		Seed:     goldenSeed,
+		MaxTurns: 200,
+		Choosers: [2]ChooserFactory{UniformUsablePolicy(11), UniformUsablePolicy(12)},
+	}
+
+	first, err := Run(cfg)
+	if err != nil {
+		t.Fatalf("1回目のRun() error = %v", err)
+	}
+	second, err := Run(cfg)
+	if err != nil {
+		t.Fatalf("2回目のRun() error = %v", err)
+	}
+	sameResult(t, "同じpolicy seedの2回目", first, second)
+
+	// policyのseedだけを変えれば結果は変わる。
+	cfg.Choosers = [2]ChooserFactory{UniformUsablePolicy(21), UniformUsablePolicy(22)}
+	changed, err := Run(cfg)
+	if err != nil {
+		t.Fatalf("別seedのRun() error = %v", err)
+	}
+	if first.Final == changed.Final && len(first.Events) == len(changed.Events) {
+		t.Error("policyのseedを変えても結果が変わらない")
+	}
+}

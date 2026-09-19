@@ -193,6 +193,29 @@ func applyDrain(state *BattleState, side Side, damage int) []Event {
 	return []Event{Healed{Side: side, Amount: healed, RemainingHP: user.CurrentHP}}
 }
 
+// applyRecoil は与えたダメージの半分を使用者へ跳ね返す。
+//
+// Struggleの反動。Generation Iは実際に与えたダメージのfloor(1/2)で、最低1。
+// overkillした分は入らない（strikeが相手の残HPで切ったダメージを渡す）。
+//
+// 相手を倒したturnでも、相性で通らず与ダメージが0でも起きる。damage 0のときも
+// 最低1は自分へ返るので、命中したStruggleは必ず使用者のHPを削る。
+func applyRecoil(state *BattleState, side Side, damage int) []Event {
+	amount := damage / 2
+	if amount < 1 {
+		amount = 1
+	}
+
+	user := state.Players[side].ActivePokemon()
+	if amount > user.CurrentHP {
+		amount = user.CurrentHP
+	}
+	user.CurrentHP -= amount
+
+	// 戦闘不能のEventはendTurnが出す。相手のFaintedより後に並べるため。
+	return []Event{Damage{Side: side, Amount: amount, RemainingHP: user.CurrentHP}}
+}
+
 // selfDestruct は使用者を戦闘不能にする。
 //
 // Generation Iの自爆系は命中判定より前にこれを行うため、技が外れても倒れる。

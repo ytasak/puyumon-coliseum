@@ -30,6 +30,8 @@ const (
 	EffectDrain
 	// EffectSpeedUp2 は自分のSpeedのstageを2つ上げる。
 	EffectSpeedUp2
+	// EffectRecoil は与えたダメージの半分を使用者へ跳ね返す。Struggleが使う。
+	EffectRecoil
 )
 
 // String はMoveEffectの名前を返す。testとlogの出力に使う。
@@ -59,6 +61,8 @@ func (e MoveEffect) String() string {
 		return "drain"
 	case EffectSpeedUp2:
 		return "speed_up2"
+	case EffectRecoil:
+		return "recoil"
 	default:
 		return "unknown"
 	}

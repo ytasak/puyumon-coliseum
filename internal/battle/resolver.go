@@ -70,7 +70,7 @@ func (r *Resolver) ResolveTurn(state BattleState, p1, p2 Action) (BattleState, [
 		return original, nil, err
 	}
 	for _, side := range order {
-		turnEvents, err := r.takeTurn(&state, side, actions[side].(MoveAction))
+		turnEvents, err := r.takeTurn(&state, side, actions[side])
 		if err != nil {
 			return original, nil, err
 		}
@@ -146,6 +146,14 @@ func (r *Resolver) validateAction(state BattleState, side Side, action Action) e
 		if _, err := r.Data.LookupMove(slot.Move); err != nil {
 			return err
 		}
+	case StruggleAction:
+		// 使える技が1つでも残っていればStruggleは選べない。
+		if active.Fainted() {
+			return fmt.Errorf("%w: %s active pokemon has fainted", ErrInvalidAction, side)
+		}
+		if active.HasUsableMove() {
+			return fmt.Errorf("%w: %s still has a move with PP left", ErrInvalidAction, side)
+		}
 	case SwitchAction:
 		if a.Target == player.Active {
 			return fmt.Errorf("%w: %s is already using team slot %d", ErrInvalidAction, side, a.Target)
@@ -184,7 +192,7 @@ func switchOrder(state BattleState, actions [2]Action) []Side {
 func (r *Resolver) moveOrder(state BattleState, actions [2]Action) ([]Side, error) {
 	var moving []Side
 	for _, side := range sides {
-		if _, ok := actions[side].(MoveAction); ok {
+		if usesMove(actions[side]) {
 			moving = append(moving, side)
 		}
 	}
@@ -194,7 +202,7 @@ func (r *Resolver) moveOrder(state BattleState, actions [2]Action) ([]Side, erro
 
 	priority := [2]int{}
 	for _, side := range sides {
-		move, err := r.chosenMove(state, side, actions[side].(MoveAction))
+		move, err := r.chosenMove(state, side, actions[side])
 		if err != nil {
 			return nil, err
 		}
@@ -223,14 +231,39 @@ func (r *Resolver) moveOrder(state BattleState, actions [2]Action) ([]Side, erro
 	return []Side{first, second}, nil
 }
 
-// chosenMove はそのturnに選んだ技の定義を返す。
-func (r *Resolver) chosenMove(state BattleState, side Side, action MoveAction) (Move, error) {
-	player := state.Players[side]
-	return r.Data.LookupMove(player.Team[player.Active].Moves[action.Slot].Move)
+// usesMove は技を出す行動かを返す。
+//
+// Struggleは技枠を使わないが、行動順の決め方も解決の流れも技と同じなので、
+// ここでは技として扱う。
+func usesMove(action Action) bool {
+	switch action.(type) {
+	case MoveAction, StruggleAction:
+		return true
+	default:
+		return false
+	}
+}
+
+// chosenMove はそのturnに出す技の定義を返す。
+//
+// Struggleは固定move setに無いsynthetic moveなので、Dataを引かずにengineの定義を返す。
+func (r *Resolver) chosenMove(state BattleState, side Side, action Action) (Move, error) {
+	switch a := action.(type) {
+	case MoveAction:
+		player := state.Players[side]
+		return r.Data.LookupMove(player.Team[player.Active].Moves[a.Slot].Move)
+	case StruggleAction:
+		return struggleMove, nil
+	default:
+		return Move{}, fmt.Errorf("%w: %s did not choose a move", ErrInvalidAction, side)
+	}
 }
 
 // takeTurn は片側の手番を処理する。
-func (r *Resolver) takeTurn(state *BattleState, side Side, action MoveAction) ([]Event, error) {
+//
+// actionはMoveActionかStruggleAction。どちらも同じ流れで解決し、
+// 違うのは技枠のPPを消費するかどうかだけ。
+func (r *Resolver) takeTurn(state *BattleState, side Side, action Action) ([]Event, error) {
 	attacker := state.Players[side].ActivePokemon()
 
 	// 手番が来る前に倒されていれば何も起きない。
@@ -266,8 +299,13 @@ func (r *Resolver) takeTurn(state *BattleState, side Side, action MoveAction) ([
 	}
 
 	// PPは命中判定より前に消費する。技が外れても減る。
-	attacker.Moves[action.Slot].PP--
-	events := []Event{MoveUsed{Side: side, Slot: action.Slot, Move: move.ID}}
+	// Struggleは技枠を使わないので、どのslotのPPも減らさない。
+	slot := NoMoveSlot
+	if chosen, ok := action.(MoveAction); ok {
+		slot = chosen.Slot
+		attacker.Moves[slot].PP--
+	}
+	events := []Event{MoveUsed{Side: side, Slot: slot, Move: move.ID}}
 
 	// 自爆は命中判定より前に使用者を戦闘不能にする。外れても倒れる（実機の挙動）。
 	exploded := move.Effect == EffectExplode
@@ -287,9 +325,14 @@ func (r *Resolver) takeTurn(state *BattleState, side Side, action MoveAction) ([
 		}
 		events = append(events, hit...)
 
-		// 吸収は相手を倒したturnでも起きる。実機もこの効果だけは最後まで処理する。
+		// 吸収と反動は相手を倒したturnでも起きる。実機もこの2つは最後まで処理する。
 		if move.Effect == EffectDrain {
 			events = append(events, applyDrain(state, side, damage)...)
+		}
+		// Struggleの反動は相性で通らず与ダメージが0でも起きる。命中してここまで
+		// 進んだこと自体が条件で、最低1は必ず自分へ返る。
+		if move.Effect == EffectRecoil {
+			events = append(events, applyRecoil(state, side, damage)...)
 		}
 		if fainted {
 			defenderSide := side.Opponent()
@@ -308,14 +351,15 @@ func (r *Resolver) takeTurn(state *BattleState, side Side, action MoveAction) ([
 
 // endTurn は手番の後始末をする。
 //
-// 自爆した使用者をここで戦闘不能にし、そうでなければ継続ダメージを処理する。
-// 相手を倒したturnは継続ダメージが起きない。
+// 自爆した使用者と、Struggleの反動で倒れた使用者をここで戦闘不能にする。
+// どちらでもなければ継続ダメージを処理する。相手を倒したturnは継続ダメージが起きない。
 func (r *Resolver) endTurn(state *BattleState, side Side, events []Event, exploded bool) []Event {
 	if exploded {
 		return append(events, Fainted{Side: side, Index: state.Players[side].Active})
 	}
+	// Struggleの反動で自分も倒れることがある。相手のFaintedのあとに出す。
 	if state.Players[side].ActivePokemon().Fainted() {
-		return events
+		return append(events, Fainted{Side: side, Index: state.Players[side].Active})
 	}
 	if state.Players[side.Opponent()].ActivePokemon().Fainted() {
 		return events

@@ -273,6 +273,30 @@ func TestRunCountsUnresolvedSeparately(t *testing.T) {
 	}
 }
 
+// TestRunUsesEverySeedInTheRange は、Trials回の試行がFirstSeedから1ずつ増やしたseedで
+// 回っていることを確かめる。
+//
+// 試行ごとにseedを進めていないと、同じ対戦をTrials回繰り返すだけになる。
+// それでも決定性のtestは通ってしまうので、seedの配り方そのものを固定する。
+func TestRunUsesEverySeedInTheRange(t *testing.T) {
+	cfg := testConfig()
+	cfg.Trials = 2
+
+	both := runForTest(t, cfg)
+	first := runForTest(t, Config{FirstSeed: cfg.FirstSeed, Trials: 1, MaxTurns: cfg.MaxTurns})
+	second := runForTest(t, Config{FirstSeed: cfg.FirstSeed + 1, Trials: 1, MaxTurns: cfg.MaxTurns})
+
+	for i, row := range both.Matchups {
+		for j, matchup := range row {
+			want := addOutcomes(first.Matchups[i][j].Outcomes, second.Matchups[i][j].Outcomes)
+			if matchup.Outcomes != want {
+				t.Errorf("matrix[%d][%d] = %+v, want %+v（seed %d と %d の合計）",
+					i, j, matchup.Outcomes, want, cfg.FirstSeed, cfg.FirstSeed+1)
+			}
+		}
+	}
+}
+
 // TestRunIsDeterministic は同じConfigから同じReportが再生成できることを確かめる。
 func TestRunIsDeterministic(t *testing.T) {
 	cfg := testConfig()

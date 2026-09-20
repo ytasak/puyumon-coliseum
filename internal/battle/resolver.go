@@ -119,6 +119,21 @@ func (r *Resolver) ResolveReplacement(state BattleState, side Side, action Switc
 	return state, []Event{switchIn(&state, side, action.Target)}, nil
 }
 
+// ValidateAction はそのsideがそのActionを取れるかだけを確かめる。
+//
+// 状態も乱数列も変えない。turnを解決する前に片側のActionだけを先に検証したい
+// 呼び出し元のために公開している。両者のActionを集めてからResolveTurnを呼ぶ層は、
+// これが無いと「どちらのActionが取れなかったのか」を判断できない。
+//
+// 見るのはそのActionが成立するかどうかだけで、対戦が終わっていないか、
+// 交代が必要でないかは見ない。それはturn全体の前提条件なのでResolveTurnが見る。
+func (r *Resolver) ValidateAction(state BattleState, side Side, action Action) error {
+	if !side.valid() {
+		return fmt.Errorf("%w: unknown side %d", ErrInvalidAction, int(side))
+	}
+	return r.validateAction(state, side, action)
+}
+
 // validateAction はActionがその状態で取れるものかを確かめる。
 func (r *Resolver) validateAction(state BattleState, side Side, action Action) error {
 	if action == nil {

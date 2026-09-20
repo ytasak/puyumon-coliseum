@@ -209,9 +209,8 @@ func (s *Session) SubmitLead(side battle.Side, index int) error {
 // 両sideが揃った時点で1 turnを解決する。片側だけならResolvedがfalseのまま返り、
 // 相手のsubmitを待つ。同じsideが同じturnに2度submitすることはできない。
 //
-// resolverがActionを受け付けなかった場合は状態を進めず、溜めていた両方のActionを
-// 捨ててerrorを返す。どちらのActionが原因かをsessionからは区別できないため、
-// 片方だけを残すと出し直せない組み合わせが残る。両者が出し直す。
+// 取れないActionは溜める前に弾くので、拒否されても相手の溜めたActionは残る。
+// 出した側だけが出し直せばよい。合法性の判断はresolverが行い、sessionは複製しない。
 func (s *Session) SubmitAction(side battle.Side, action battle.Action) (SubmitResult, error) {
 	if !validSide(side) {
 		return SubmitResult{}, fmt.Errorf("%w: unknown side %d", ErrInvalidCommand, int(side))
@@ -225,6 +224,12 @@ func (s *Session) SubmitAction(side battle.Side, action battle.Action) (SubmitRe
 	if action == nil {
 		return SubmitResult{}, fmt.Errorf("%w: %s submitted no action", ErrInvalidCommand, side)
 	}
+	// 対戦のルール上取れないActionは、溜める前にここで落とす。溜めてから
+	// 解決時に落とすと、どちらのActionが原因かを区別できないまま
+	// 相手の分まで捨てることになる。
+	if err := s.resolver.ValidateAction(s.state, side, action); err != nil {
+		return SubmitResult{}, err
+	}
 
 	s.actions[side] = action
 	s.submitted[side] = true
@@ -233,6 +238,9 @@ func (s *Session) SubmitAction(side battle.Side, action battle.Action) (SubmitRe
 	}
 
 	next, events, err := s.resolver.ResolveTurn(s.state, s.actions[battle.Player1], s.actions[battle.Player2])
+	// 溜めた時点で両方とも取れるActionであることを確かめてあり、そのあいだ
+	// 状態は動かないのでここでは落ちない想定。落ちた場合は状態を進めず、
+	// 両者が出し直すところからやり直せるようにする。
 	s.clearActions()
 	if err != nil {
 		return SubmitResult{}, err

@@ -190,6 +190,43 @@ func TestRejectedCommandKeepsTheBufferedAction(t *testing.T) {
 	}
 }
 
+// 対戦のルール上取れないActionは、溜めてある相手のActionを壊さずに弾く。
+func TestResolverRejectionKeepsTheBufferedAction(t *testing.T) {
+	t.Parallel()
+
+	session := startedSession(t, Config{Seed: 5})
+
+	if _, err := session.SubmitAction(Player, battle.MoveAction{Slot: 0}); err != nil {
+		t.Fatalf("playerのActionが拒否された: %v", err)
+	}
+
+	state, _ := session.State()
+	rejected := []battle.Action{
+		// 使える技が残っているのでStruggleは取れない。
+		battle.StruggleAction{},
+		// 場に出ている個体へは交代できない。
+		battle.SwitchAction{Target: state.Players[Opponent].Active},
+	}
+	for _, action := range rejected {
+		if _, err := session.SubmitAction(Opponent, action); !errors.Is(err, battle.ErrInvalidAction) {
+			t.Fatalf("%T のerrorが %v（%v のはず）", action, err, battle.ErrInvalidAction)
+		}
+	}
+
+	// 弾かれてもopponentは出し直せる。playerのActionも残っている。
+	result, err := session.SubmitAction(Opponent, battle.MoveAction{Slot: 0})
+	if err != nil {
+		t.Fatalf("出し直したActionが拒否された: %v", err)
+	}
+	if !result.Resolved {
+		t.Fatal("取れないActionがplayerの溜めたActionを捨てている")
+	}
+
+	if after, _ := session.State(); after.Turn != 2 {
+		t.Errorf("解決後のturnが %d（2のはず）", after.Turn)
+	}
+}
+
 // Teamは複製を返す。外から書き換えてもsessionの中は変わらない。
 func TestTeamIsACopy(t *testing.T) {
 	t.Parallel()

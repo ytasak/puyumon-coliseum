@@ -17,8 +17,9 @@ var sides = [...]battle.Side{battle.Player1, battle.Player2}
 // 回すのは順序付きの組み合わせなので、combinationがN通りならN×N×Config.Trials対戦になる。
 // 同じteam同士（matrixの対角）も回す。
 //
-// 対戦は internal/simulation が進める。行動の選び方はsimulationの既定である
-// FirstUsableのままにしていて、ここでは足さない（賢いBotはOut of scope）。
+// 対戦は internal/simulation が進める。行動の選び方はConfig.Policyで選ぶ。
+// どちらも賢いBotではなく、FirstUsableはslot 0を撃ち続ける方針、
+// UniformUsableはその偏りを崩すための対照でしかない。
 //
 // 同じConfigからは必ず同じReportが返る。実行順も集計順もConfigだけで決まり、
 // 並列化もしていないので、結果が走らせ方に左右されることはない。
@@ -41,6 +42,7 @@ func Run(cfg Config) (Report, error) {
 				result, err := simulation.Run(simulation.Config{
 					Teams:    [2][battle.TeamSize]battle.SpeciesID{combinations[first], combinations[second]},
 					Seed:     seed,
+					Choosers: cfg.Policy.choosers(seed),
 					MaxTurns: cfg.MaxTurns,
 				})
 				if err != nil {

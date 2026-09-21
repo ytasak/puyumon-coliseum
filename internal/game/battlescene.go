@@ -105,6 +105,12 @@ func newBattleScene(seed uint64) (*battleScene, error) {
 }
 
 // busy はcueを消化中で入力を受け付けない状態かを返す。
+//
+// 消化中はviewが1つ前のまま止まるので、view.Commandsには直前の選択肢が
+// 残っている。**描画側はここを見て、再生中は操作メニューを出さないか、
+// 待機中と分かる表示にする。** view.Commandsを待機状態へ書き換えることはしない。
+// 書き換えると、まだ見せていない結果を先出ししないための「viewを止める」
+// 仕組みと食い違うため。
 func (s *battleScene) busy() bool {
 	return len(s.queue) > 0
 }

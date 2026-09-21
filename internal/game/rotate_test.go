@@ -2,7 +2,6 @@ package game
 
 import (
 	"testing"
-	"unicode"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -68,19 +67,6 @@ func TestDrawDoesNotPanicInEitherOrientation(t *testing.T) {
 	} {
 		g.Layout(size.w, size.h)
 		g.Draw(screen)
-	}
-}
-
-// 促す文面は組み込みのASCIIフォントで描くため、非ASCII文字を含められない。
-func TestRotatePromptIsASCIIOnly(t *testing.T) {
-	t.Parallel()
-
-	for _, line := range rotatePromptLines {
-		for _, r := range line {
-			if r > unicode.MaxASCII {
-				t.Errorf("rotate prompt line %q contains non-ASCII rune %q", line, r)
-			}
-		}
 	}
 }
 

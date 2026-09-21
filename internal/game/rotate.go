@@ -9,11 +9,11 @@ import (
 
 // rotatePromptLines は横持ちを促す文面。
 //
-// ebitenutil.DebugPrintAt の組み込みフォントで描くためASCIIのみで構成する。
+// 同梱した日本語フォントで描くので、システムフォントには依存しない。
 var rotatePromptLines = []string{
-	"ROTATE YOUR DEVICE",
+	"画面を横向きにしてください",
 	"",
-	"this game is played in landscape",
+	"このゲームは横向きで遊びます",
 }
 
 // 回転を促す画面のレイアウト（論理座標）。
@@ -36,7 +36,7 @@ const (
 	rotateArrowHead  = 9
 
 	rotatePromptTextTop = 224
-	rotatePromptLineGap = 16
+	rotatePromptLineGap = 20
 )
 
 var (
@@ -69,6 +69,6 @@ func (g *Game) drawRotatePrompt(screen *ebiten.Image) {
 		rotateArrowRight, rotateIconY, 2, rotateBrightColor, true)
 
 	for i, line := range rotatePromptLines {
-		drawCenteredLabel(screen, line, LogicalWidth/2, rotatePromptTextTop+i*rotatePromptLineGap)
+		drawCenteredText(screen, g.face, line, LogicalWidth/2, rotatePromptTextTop+i*rotatePromptLineGap)
 	}
 }

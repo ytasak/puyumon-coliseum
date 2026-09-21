@@ -141,6 +141,7 @@ internal/roster/            6 キャラクターと固定 move set のデータ�
 internal/simulation/        Battle Engine を UI なしで回す simulation harness（UI 非依存）
 internal/balance/           roster combination の総当たりを集計して balance の指標にする層（UI 非依存）
 internal/singleplayer/      1 人用 1 試合の進行を管理する session layer（UI 非依存）
+internal/bot/               Bot の行動選択（UI 非依存）
 docs/mobile-safari-poc.md   iPhone Safari / iframe 検証の手順と記録（YTA-10）
 docs/wasm-delivery.md       本番配信時の圧縮手順と実測サイズ（YTA-12）
 docs/loading-experience.md  初回ロード中の表示と、回線別のロード時間（YTA-13）
@@ -192,6 +193,12 @@ UI は `Resolver` を直接呼ばず、この層へ command を送って状態�
 player 側と opponent 側で同じ command API を使うため、Bot はこの層の内部ではなく外側の actor として置ける。
 乱数は root seed 1 つから配布用・Battle Engine 用・Bot 判断用へ分けて導出するので、
 Bot が何回乱数を引いても対戦の命中・急所・ダメージは変わらない。
+
+`internal/bot` は「どの Action を選ぶか」だけを返す層で、対戦のルールも session の進行も持たない。
+session の内部ではなく外側の actor なので、production code は `internal/battle` だけに依存し、
+`internal/singleplayer` も `internal/simulation` も import しない。session と繋ぐのは呼び出し側。
+乱数は Battle Engine とは別の列を使うので、Bot が何回引いても命中・急所・ダメージは変わらない。
+判断の仕様と、判断に使ってよい観測情報は Linear の YTA-29 を参照。
 
 `internal/anim` はアニメーションの**状態**だけを持ち、キャラクター定義も base transform も持たない。
 描画に使う transform は毎回 base から計算し直すため、再生を繰り返してもずれが蓄積しない。

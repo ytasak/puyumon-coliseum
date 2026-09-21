@@ -208,8 +208,12 @@ Ebitengineを採用した最小のゲームクライアントを追加する。
 - ...
 ```
 
-- push / PR 作成 / リモートリポジトリ作成など外部へ影響する操作は、実行前にユーザーの確認を取る
-- PR を作成する場合は、Linear Issue へのリンク、Summary、Implementation notes、検証結果、
+- push と PR 作成は、作業の実装・検証が済んだら個別の事前確認なしで実行してよい
+- PR は最新 head の実際の差分・tests・Acceptance Criteria・checks をレビューし、blocking な問題が
+  無ければマージしてよい。マージ前に Issue を Done にしない
+- リモートリポジトリ作成・force push・公開・deploy など、上記以外の外部へ影響する操作は
+  実行前にユーザーの確認を取る
+- PR を作成する場合は、該当する Linear Issue があればそのリンク、Summary、Implementation notes、検証結果、
   manual verification 手順、Known limitations を記載する。PR 作成だけで Issue を Done にしない
 
 ## 11. ドキュメントと言語

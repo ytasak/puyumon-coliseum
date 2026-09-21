@@ -8,10 +8,13 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
+// testSeed はtestで使う固定のseed。同じ対戦から始まるようにする。
+const testSeed = 1
+
 func newGame(t *testing.T) *Game {
 	t.Helper()
 
-	g, err := New()
+	g, err := New(testSeed)
 	if err != nil {
 		t.Fatalf("New() returned error: %v", err)
 	}

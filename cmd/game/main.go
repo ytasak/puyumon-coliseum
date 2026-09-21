@@ -7,6 +7,7 @@ package main
 import (
 	"errors"
 	"log"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
@@ -14,7 +15,10 @@ import (
 )
 
 func main() {
-	g, err := game.New()
+	// 起動ごとに別の対戦になるよう、seedはここで決める。
+	// その場の値に触れるのはentry pointだけにして、internal/game以下は
+	// 渡されたseedしか使わない。グローバルな乱数状態は使わない。
+	g, err := game.New(uint64(time.Now().UnixNano()))
 	if err != nil {
 		log.Fatalf("new game: %v", err)
 	}

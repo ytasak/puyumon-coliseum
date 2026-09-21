@@ -63,6 +63,14 @@ type Game struct {
 	// outsideWidth, outsideHeight はLayoutが受け取った外側のサイズ。
 	// 画面の向きの判定にだけ使う。論理解像度には影響しない。
 	outsideWidth, outsideHeight int
+
+	// seed はこの起動ぶんの乱数の素。新しい対戦のseedもここから導く。
+	seed uint64
+
+	// battle は対戦の進行状態。Battle Ruleは持たず、sessionを介してのみ対戦を進める。
+	//
+	// 画面への接続（入力の割り当てと描画）は、画面レイアウトと一緒に入れる。
+	battle *battleScene
 }
 
 // 実装漏れをコンパイル時に検出する。
@@ -70,19 +78,32 @@ var _ ebiten.Game = (*Game)(nil)
 
 // New は初期状態のGameを返す。
 //
+// seedはこの起動ぶんの対戦を決める。同じseedからは同じ試合列になるので、
+// 再現したい場合は同じ値を渡す。時刻のようなその場の値から決めるのは
+// 呼び出し側（entry point）の責務で、ここではグローバルな乱数状態に触らない。
+//
 // 同梱フォントの読み込みに失敗した場合はerrorを返す。
-func New() (*Game, error) {
+func New(seed uint64) (*Game, error) {
 	emojis, err := emoji.New()
 	if err != nil {
 		return nil, fmt.Errorf("game: %w", err)
 	}
-	return &Game{sprites: sprite.NewRenderer(emojis)}, nil
+
+	scene, err := newBattleScene(seed)
+	if err != nil {
+		return nil, err
+	}
+	return &Game{seed: seed, sprites: sprite.NewRenderer(emojis), battle: scene}, nil
 }
 
 // Update はEbitengineのtickごとに呼ばれる。
 //
 // ここではanimationの状態だけを進め、描画は行わない。
 func (g *Game) Update() error {
+	if err := g.battle.update(); err != nil {
+		return err
+	}
+
 	g.updateSpriteDemo(g.ticks)
 	g.ticks++
 	return nil

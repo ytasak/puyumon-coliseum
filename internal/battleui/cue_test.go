@@ -300,6 +300,28 @@ func TestFaintCueWithoutDamage(t *testing.T) {
 	}
 }
 
+// 戦闘不能はEventが持つindexを指す。交代でactiveが動いたあとでも取り違えない。
+func TestFaintCueHonoursTheEventIndex(t *testing.T) {
+	t.Parallel()
+
+	before := battleInput(t).State
+	cues := Cues(before, []battle.Event{
+		battle.Switched{Side: battle.Player1, From: 0, To: 2},
+		battle.Fainted{Side: battle.Player1, Index: 0},
+	})
+
+	faint, ok := cues[len(cues)-1].(FaintCue)
+	if !ok {
+		t.Fatalf("最後のcue = %T", cues[len(cues)-1])
+	}
+	if faint.Target.Index != 0 {
+		t.Errorf("FaintCueの対象 = %d, want 0（activeは2へ動いている）", faint.Target.Index)
+	}
+	if want := before.Players[battle.Player1].Team[0].Species; faint.Target.Species != want {
+		t.Errorf("FaintCueのSpecies = %q, want %q", faint.Target.Species, want)
+	}
+}
+
 // Event列の順序をそのまま保つ。
 func TestCuesKeepEventOrder(t *testing.T) {
 	t.Parallel()

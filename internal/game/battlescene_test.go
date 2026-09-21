@@ -141,27 +141,31 @@ func TestSubmittingAMoveResolvesTheTurn(t *testing.T) {
 }
 
 // cueを消化しているあいだは入力を受け付けない。
+//
+// 交代を出した直後は、消化しきるまでviewが交代の選択肢を出したままになる。
+// ここで二重に送れてしまうと、同じturnに2回交代できてしまう。
 func TestSceneIgnoresInputWhileCuesPlay(t *testing.T) {
 	t.Parallel()
 
-	scene := startedScene(t, 1)
-	submitOrFatal(t, scene, command{kind: commandMove, index: 0})
-	if !scene.busy() {
-		t.Fatal("cueが積まれていない")
+	scene, ok := sceneAtReplacement(t)
+	if !ok {
+		t.Fatal("replacementへ到達する局面を作れなかった")
 	}
 
-	turnBefore := scene.view.You.Team[scene.view.You.Active].HP
-	for _, c := range []command{
-		{kind: commandMove, index: 1},
-		{kind: commandSwitch, index: 1},
-		{kind: commandStruggle},
-	} {
-		if accepted, err := scene.submit(c); accepted || err != nil {
-			t.Errorf("再生中に %+v が受理された（accepted=%v err=%v）", c, accepted, err)
-		}
+	first := scene.view.Commands.Switches[0].Index
+	submitOrFatal(t, scene, command{kind: commandSwitch, index: first})
+	if !scene.busy() {
+		t.Fatal("交代のcueが積まれていない")
 	}
-	if got := scene.view.You.Team[scene.view.You.Active].HP; got != turnBefore {
-		t.Error("拒否したのに状態が動いた")
+	// 選択肢を出したままであることを確かめてから、二重入力を試す。
+	if got := scene.view.Commands.Kind; got != battleui.CommandChooseReplacement {
+		t.Fatalf("再生中のcommand = %s（選択肢が残っている状態で確かめたい）", got)
+	}
+
+	for _, c := range scene.view.Commands.Switches {
+		if accepted, err := scene.submit(command{kind: commandSwitch, index: c.Index}); accepted || err != nil {
+			t.Errorf("再生中に交代 %d が受理された（accepted=%v err=%v）", c.Index, accepted, err)
+		}
 	}
 }
 
@@ -174,15 +178,17 @@ func TestShownHPFollowsEachCue(t *testing.T) {
 		t.Fatal("HPが動くturnを作れなかった")
 	}
 
+	// 見えたかどうかは**消化しきる前**に数える。消化後はSnapshotへ揃うので、
+	// 最終値と一致しただけの見かけの一致を数えない。
 	seen := map[int]bool{}
 	for scene.busy() {
-		if err := scene.update(); err != nil {
-			t.Fatalf("update()に失敗: %v", err)
-		}
 		for _, step := range steps {
 			if scene.shown.hp[step.Target.Side][step.Target.Index] == step.HP {
 				seen[step.HP] = true
 			}
+		}
+		if err := scene.update(); err != nil {
+			t.Fatalf("update()に失敗: %v", err)
 		}
 	}
 
@@ -197,29 +203,49 @@ func TestShownHPFollowsEachCue(t *testing.T) {
 func TestViewDoesNotJumpAheadOfTheCues(t *testing.T) {
 	t.Parallel()
 
-	scene := startedScene(t, 1)
-	turnBefore := scene.view.You.Team[0].HP
-	phaseBefore := scene.view.Phase
-
-	submitOrFatal(t, scene, command{kind: commandMove, index: 0})
+	scene, _, ok := sceneWithDamageCues(t)
+	if !ok {
+		t.Fatal("HPが動くturnを作れなかった")
+	}
 	if !scene.busy() {
-		t.Skip("cueが積まれない局面だった")
+		t.Fatal("cueが積まれていない")
 	}
 
-	// 1 tickだけ進めても、viewはturn前のまま。
-	if err := scene.update(); err != nil {
-		t.Fatalf("update()に失敗: %v", err)
+	// 消化しきるまでviewは1つも動かない。動けば結果やHPを先出ししたことになる。
+	frozen := scene.view
+	for ticks := 0; scene.busy(); ticks++ {
+		if err := scene.update(); err != nil {
+			t.Fatalf("update()に失敗: %v", err)
+		}
+		if scene.busy() && !reflect.DeepEqual(scene.view, frozen) {
+			t.Fatalf("%d tick目で再生中にviewが動いた", ticks+1)
+		}
 	}
-	if scene.view.Phase != phaseBefore {
-		t.Errorf("再生中にphaseが進んだ: %s -> %s", phaseBefore, scene.view.Phase)
-	}
-	if scene.view.You.Team[0].HP != turnBefore {
-		t.Error("再生中にviewのHPが動いた")
-	}
-
-	drainCues(t, scene)
 	if scene.shown.hp[scene.view.You.Side][0] != scene.view.You.Team[0].HP {
 		t.Error("消化しきってもviewと見せている値が一致しない")
+	}
+}
+
+// FaintCueだけでHP 0・ひんしへ移す。
+//
+// 自爆や、自爆が外れた場合のようにダメージを伴わずに倒れることがある。
+// UIが技の効果から推測しなくてよいことを、このcue単独で確かめる。
+func TestFaintCueMovesToFaintedWithoutDamage(t *testing.T) {
+	t.Parallel()
+
+	scene := startedScene(t, 1)
+	target := battleui.Ref{Side: foe, Index: scene.view.Foe.Active}
+	if scene.shown.hp[target.Side][target.Index] == 0 {
+		t.Fatal("technical: 相手が最初から瀕死になっている")
+	}
+
+	scene.apply(battleui.FaintCue{Target: target})
+
+	if got := scene.shown.hp[target.Side][target.Index]; got != 0 {
+		t.Errorf("HP = %d, want 0", got)
+	}
+	if !scene.shown.fainted[target.Side][target.Index] {
+		t.Error("ひんしになっていない")
 	}
 }
 

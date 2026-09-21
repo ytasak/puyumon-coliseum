@@ -11,7 +11,7 @@
 //
 // 相手については画面から読める情報だけを返す。技構成と残りPPを持つのは
 // OwnPokemonだけで、相手側のPokemonViewにはそのfieldが無い。
-// HPは両者とも数値で返し、バーだけ描くか数値も出すかはUI側が決める。
+// HPは両者とも数値で返す。画面はHP barと数値の両方を出す（YTA-31の確定要件）。
 //
 // # Snapshotとcueの役割
 //
@@ -54,16 +54,21 @@ type Input struct {
 
 // Pending はviewer自身が出した入力の待ち状態。
 //
-// 「相手が先に出した」ことは含まない。Sessionは誰がsubmit済みかを公開して
-// いないので、受理された自分の入力だけをUI側が立てて渡す。
+// Sessionは誰がsubmit済みかを公開していないので、callerが持って渡す。
+// 立てるのは**受理されたviewer自身の入力だけ**。rejectされたときは既存の値を
+// 壊さず、相手だけが先に出した場合もviewerのPendingは立てない。
 //
-// phaseごとに対応するfieldだけを見るため、phaseが変わったあとに古い値が
-// 残っていても表示には影響しない。
+// この層は対応するphaseのfieldしか見ない（LeadはLeadSelection、ActionはBattle）。
+// ただしそれはphase違いの取り違えを防ぐだけで、**値を正しく保つのはcallerの義務**。
+// 解決してもActionがtrueのまま残っていれば、次のturnも相手待ちの表示になって
+// 操作できない。Battle → Replacement → Battleと戻ったときも同じ値が再び効く。
 type Pending struct {
-	// Lead はlead選択を出して相手を待っているか。Battleへ移れば意味を持たない。
+	// Lead はlead選択を出して相手を待っているか。
+	// Battleへ移った時点でcallerがclearする。
 	Lead bool
 
-	// Action はそのturnの行動を出して相手を待っているか。turnが解決すれば意味を持たない。
+	// Action はそのturnの行動を出して相手を待っているか。
+	// どちら側のsubmitでもturnが解決したらcallerがclearする。
 	Action bool
 }
 
@@ -119,7 +124,8 @@ type PokemonView struct {
 
 	Level int
 
-	// HP と MaxHP は現在HPと最大HP。バーだけ描くか数値も出すかはUIが決める。
+	// HP と MaxHP は現在HPと最大HP。両者とも数値で提供する。
+	// 画面はHP barと数値の両方を出す（YTA-31の確定要件）。
 	HP    int
 	MaxHP int
 

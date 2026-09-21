@@ -151,7 +151,10 @@ func TestPendingSuppressesInput(t *testing.T) {
 	}
 }
 
-// phaseが変わったあとの古いpendingは表示に影響しない。
+// 対応しないphaseのpendingは参照しない。
+//
+// これはphase違いの取り違えを防ぐだけで、同じphaseに残った古い値までは救わない。
+// 解決やphase遷移でのclearはcallerの責務。
 func TestStalePendingDoesNotLeakAcrossPhases(t *testing.T) {
 	t.Parallel()
 

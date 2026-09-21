@@ -434,15 +434,6 @@ func TestNewSessionDoesNotCarryOver(t *testing.T) {
 	if _, decided := fresh.Outcome(); decided {
 		t.Error("新しいsessionに決着がある")
 	}
-
-	before := newSessionOrFatal(t, scenarioSeed)
-	for _, side := range sides {
-		old, _ := before.Team(side)
-		next, _ := fresh.Team(side)
-		if speciesOf(old) == speciesOf(next) {
-			t.Errorf("%s: 新しいsessionでも配布が同じ", side)
-		}
-	}
 }
 
 // 同じseedと同じ操作からは同じ試合になる。

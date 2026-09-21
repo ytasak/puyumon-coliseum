@@ -242,6 +242,15 @@ func playWithBots(t *testing.T, session *singleplayer.Session, seed uint64) ([2]
 	var steps []step
 	turns := 0
 	for session.Phase() != singleplayer.PhaseFinished {
+		if turns >= maxSmokeTurns {
+			// 打ち切りはtestの安全装置。ここで落とさず未決着として数え、
+			// 呼び出し側でまとめて扱う。上限turn目に決着した試合はloopの
+			// 条件で先に抜けるので、ここには来ない。
+			stats.turns = turns
+			stats.unresolved = true
+			return leads, steps, stats
+		}
+
 		switch session.Phase() {
 		case singleplayer.PhaseReplacement:
 			state, _ := session.State()
@@ -273,13 +282,6 @@ func playWithBots(t *testing.T, session *singleplayer.Session, seed uint64) ([2]
 				steps = append(steps, step{side: side, action: action})
 			}
 			turns++
-			if turns >= maxSmokeTurns {
-				// 打ち切りはtestの安全装置。ここで落とさず未決着として数え、
-				// 呼び出し側でまとめて扱う。
-				stats.turns = turns
-				stats.unresolved = true
-				return leads, steps, stats
-			}
 
 		default:
 			t.Fatalf("seed %d: 進められないphase: %s", seed, session.Phase())

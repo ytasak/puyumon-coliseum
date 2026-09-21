@@ -559,3 +559,96 @@ func assertResultMatches(t *testing.T, result battleui.Result, outcome battle.St
 		t.Errorf("決着していないOutcome: %s", outcome)
 	}
 }
+
+// 状態異常のcueを見せた時点で枠の表示も変わる。
+//
+// Snapshotから読むと、消化しきるまで古い状態が残ってしまう。
+func TestStatusCueUpdatesThePanelWhilePlaying(t *testing.T) {
+	t.Parallel()
+
+	scene := startedScene(t, 1)
+	target := battleui.Ref{Side: foe, Index: scene.view.Foe.Active}
+
+	if got := scene.statusOf(target.Side, target.Index); got != battleui.StatusNone {
+		t.Fatalf("開始時の状態 = %s（無いはず）", got)
+	}
+
+	scene.apply(battleui.StatusCue{Target: target, Status: battle.Paralysis, Applied: true})
+	if got := scene.statusOf(target.Side, target.Index); got != battleui.StatusParalysis {
+		t.Errorf("付与後 = %s, want %s", got, battleui.StatusParalysis)
+	}
+
+	scene.apply(battleui.StatusCue{Target: target, Status: battle.Paralysis})
+	if got := scene.statusOf(target.Side, target.Index); got != battleui.StatusNone {
+		t.Errorf("解除後 = %s, want %s（古い状態が残っている）", got, battleui.StatusNone)
+	}
+}
+
+// 倒れていれば状態異常より「ひんし」を優先する。
+func TestFaintBeatsStatusWhilePlaying(t *testing.T) {
+	t.Parallel()
+
+	scene := startedScene(t, 1)
+	target := battleui.Ref{Side: foe, Index: scene.view.Foe.Active}
+
+	scene.apply(battleui.StatusCue{Target: target, Status: battle.Sleep, Applied: true})
+	scene.apply(battleui.FaintCue{Target: target})
+
+	if got := scene.statusOf(target.Side, target.Index); got != battleui.StatusFainted {
+		t.Errorf("状態 = %s, want %s", got, battleui.StatusFainted)
+	}
+}
+
+// 下がった時点でspriteを消し、出てきた時点で新しい1体を描く。
+func TestSwitchHidesTheSpriteUntilTheNextOneArrives(t *testing.T) {
+	t.Parallel()
+
+	scene := startedScene(t, 1)
+	side := viewer
+	out := battleui.Ref{Side: side, Index: scene.view.You.Active}
+	in := battleui.Ref{Side: side, Index: otherIndex(out.Index)}
+
+	if index, visible := scene.activeSprite(side); !visible || index != out.Index {
+		t.Fatalf("開始時のsprite = (%d, %v)", index, visible)
+	}
+
+	scene.apply(battleui.SwitchOutCue{Target: out})
+	if _, visible := scene.activeSprite(side); visible {
+		t.Error("下がったのにspriteが残っている")
+	}
+	// 枠の情報は残す。描くかどうかだけを止める。
+	if got := scene.shown.active[side]; got != out.Index {
+		t.Errorf("枠のindexが %d へ動いた（%d のはず）", got, out.Index)
+	}
+
+	scene.apply(battleui.SwitchInCue{Target: in})
+	index, visible := scene.activeSprite(side)
+	if !visible || index != in.Index {
+		t.Errorf("出てきたのに描かれない: (%d, %v), want (%d, true)", index, visible, in.Index)
+	}
+}
+
+// 倒れた個体は描かない。
+func TestFaintedActiveIsNotDrawn(t *testing.T) {
+	t.Parallel()
+
+	scene := startedScene(t, 1)
+	target := battleui.Ref{Side: foe, Index: scene.view.Foe.Active}
+
+	if _, visible := scene.activeSprite(foe); !visible {
+		t.Fatal("開始時からspriteが出ていない")
+	}
+
+	scene.apply(battleui.FaintCue{Target: target})
+	if _, visible := scene.activeSprite(foe); visible {
+		t.Error("倒れたのにspriteが残っている")
+	}
+}
+
+// otherIndex はteam内の別のindexを返す。
+func otherIndex(index int) int {
+	if index == 0 {
+		return 1
+	}
+	return 0
+}

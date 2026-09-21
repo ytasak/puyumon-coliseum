@@ -63,8 +63,8 @@ func (s *battleScene) draw(screen *ebiten.Image, sprites *sprite.Renderer) {
 //
 // lead選択中はまだ誰も出ていない。倒れた個体は描かず、枠の表示で伝える。
 func (s *battleScene) drawActive(screen *ebiten.Image, sprites *sprite.Renderer, side battle.Side) {
-	index := s.shown.active[side]
-	if !inTeam(index) || s.shown.fainted[side][index] {
+	index, visible := s.activeSprite(side)
+	if !visible {
 		return
 	}
 
@@ -73,6 +73,21 @@ func (s *battleScene) drawActive(screen *ebiten.Image, sprites *sprite.Renderer,
 		return
 	}
 	sprites.Draw(screen, characterFor(pokemon.Species), s.players[side].Transform(spriteAnchors[side]))
+}
+
+// activeSprite は場に描く1体のteam indexを返す。
+//
+// 交代で下がってから次が出るまでのあいだと、倒れたあとは誰も描かない。
+// 枠に出す情報は残すので、描くかどうかだけをここで決める。
+func (s *battleScene) activeSprite(side battle.Side) (int, bool) {
+	if side != viewer && side != foe {
+		return 0, false
+	}
+	index := s.shown.active[side]
+	if !inTeam(index) || !s.shown.onField[side] || s.shown.fainted[side][index] {
+		return 0, false
+	}
+	return index, true
 }
 
 // drawInfo は名前・Level・HP・状態・控えを枠に描く。
@@ -94,7 +109,7 @@ func (s *battleScene) drawInfo(screen *ebiten.Image, side battle.Side) {
 	}
 
 	header := fmt.Sprintf("%s LV%d", speciesLabel(pokemon.Species), pokemon.Level)
-	if tag := statusTag(s.statusOf(side, index, pokemon)); tag != "" {
+	if tag := statusTag(s.statusOf(side, index)); tag != "" {
 		header += " " + tag
 	}
 	ebitenutil.DebugPrintAt(screen, header, panel.Min.X+hpBarInset, panel.Min.Y+6)
@@ -184,12 +199,34 @@ func (s *battleScene) pokemonAt(side battle.Side, index int) (battleui.PokemonVi
 
 // statusOf は見せている状態を返す。
 //
-// cueの途中で倒れた場合は、Snapshotより先にひんしを見せる。
-func (s *battleScene) statusOf(side battle.Side, index int, pokemon battleui.PokemonView) battleui.StatusView {
+// cueを消化しながら更新した値を使う。Snapshotから読むと、消化しきるまで
+// 古い状態が残る。ひんしは状態異常より優先する。
+func (s *battleScene) statusOf(side battle.Side, index int) battleui.StatusView {
+	if !inTeam(index) {
+		return battleui.StatusNone
+	}
 	if s.shown.fainted[side][index] {
 		return battleui.StatusFainted
 	}
-	return pokemon.Status
+	return s.shown.status[side][index]
+}
+
+// statusViewOf は状態異常を表示用の値へ移す。
+func statusViewOf(status battle.MajorStatus) battleui.StatusView {
+	switch status {
+	case battle.Burn:
+		return battleui.StatusBurn
+	case battle.Freeze:
+		return battleui.StatusFreeze
+	case battle.Paralysis:
+		return battleui.StatusParalysis
+	case battle.Poison:
+		return battleui.StatusPoison
+	case battle.Sleep:
+		return battleui.StatusSleep
+	default:
+		return battleui.StatusNone
+	}
 }
 
 // statusTag は枠に出す短い状態表記を返す。状態が無ければ空。

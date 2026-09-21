@@ -64,7 +64,17 @@ type command struct {
 type shownState struct {
 	hp      [2][battle.TeamSize]int
 	fainted [2][battle.TeamSize]bool
-	active  [2]int
+
+	// status は枠へ出す状態。cueで付いたり解けたりするたびに更新する。
+	// Snapshotから読むと、cueを消化しきるまで古いままになる。
+	status [2][battle.TeamSize]battleui.StatusView
+
+	// active は枠へ出す1体。交代の途中でも、出るまでは下がる側を指したままにする。
+	active [2]int
+
+	// onField は場に誰か立っているか。交代の途中は誰も立っていない。
+	// spriteを描くかどうかだけを決め、枠の表示には影響させない。
+	onField [2]bool
 }
 
 // battleScene は1試合分の画面の状態。
@@ -182,10 +192,17 @@ func (s *battleScene) apply(cue battleui.Cue) {
 		s.setHP(c.Target, c.HP)
 		s.play(c.Target.Side, anim.Emphasis, "")
 	case battleui.StatusCue:
+		// 枠の表示もここで動かす。Snapshotは消化しきるまで更新しないので、
+		// ここで反映しないと解けたあとも古い状態が残る。
+		s.setStatus(c.Target, c.Status, c.Applied)
 		s.play(c.Target.Side, anim.Emphasis, statusParticle(c.Status))
 	case battleui.StatStageCue:
 		s.play(c.Target.Side, anim.Emphasis, "")
 	case battleui.SwitchOutCue:
+		// 下がった時点でspriteを消す。出てくるまで場には誰も立っていない。
+		if c.Target.Side == viewer || c.Target.Side == foe {
+			s.shown.onField[c.Target.Side] = false
+		}
 		s.play(c.Target.Side, anim.Emphasis, "")
 	case battleui.FaintCue:
 		// ダメージを伴わずに倒れることがある（自爆や、自爆が外れた場合）。
@@ -198,6 +215,7 @@ func (s *battleScene) apply(cue battleui.Cue) {
 	case battleui.SwitchInCue:
 		if inTeam(c.Target.Index) {
 			s.shown.active[c.Target.Side] = c.Target.Index
+			s.shown.onField[c.Target.Side] = true
 		}
 		s.play(c.Target.Side, anim.Emphasis, "")
 	}
@@ -218,6 +236,20 @@ func (s *battleScene) play(side battle.Side, motion anim.Motion, particle string
 	}
 	anchor := spriteAnchors[side]
 	s.particles.Spawn(particle, anchor.X, anchor.Y-anchor.Scale/2, particleSize)
+}
+
+// setStatus は見せている状態を更新する。
+//
+// 付いたか解けたかはcueが持っている。ここで判定し直さない。
+func (s *battleScene) setStatus(ref battleui.Ref, status battle.MajorStatus, applied bool) {
+	if !inTeam(ref.Index) {
+		return
+	}
+	if !applied {
+		s.shown.status[ref.Side][ref.Index] = battleui.StatusNone
+		return
+	}
+	s.shown.status[ref.Side][ref.Index] = statusViewOf(status)
 }
 
 // setHP は見せているHPを更新する。
@@ -460,14 +492,18 @@ func shownFrom(view battleui.View) shownState {
 	var shown shownState
 	shown.active[view.You.Side] = view.You.Active
 	shown.active[view.Foe.Side] = view.Foe.Active
+	shown.onField[view.You.Side] = inTeam(view.You.Active)
+	shown.onField[view.Foe.Side] = inTeam(view.Foe.Active)
 
 	for i, pokemon := range view.You.Team {
 		shown.hp[view.You.Side][i] = pokemon.HP
 		shown.fainted[view.You.Side][i] = pokemon.Fainted
+		shown.status[view.You.Side][i] = pokemon.Status
 	}
 	for i, pokemon := range view.Foe.Team {
 		shown.hp[view.Foe.Side][i] = pokemon.HP
 		shown.fainted[view.Foe.Side][i] = pokemon.Fainted
+		shown.status[view.Foe.Side][i] = pokemon.Status
 	}
 	return shown
 }

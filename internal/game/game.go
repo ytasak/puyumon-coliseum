@@ -1,8 +1,9 @@
 // Package game はぷゆもんコロシアムのゲームクライアント本体を提供する。
 //
-// このpackageはEbitengineのゲームループ（Update / Draw / Layout）と描画のみを担当する。
-// Battle Engineなどのgame domain logicは後続Issueで別packageとして追加し、
-// この層からはUI非依存の状態として参照する構成を維持する。
+// このpackageはEbitengineのゲームループ（Update / Draw / Layout）と描画を担当する。
+// 対戦のルールは持たない。1試合の進行は internal/singleplayer のsessionが持ち、
+// 表示に必要な形への変換は internal/battleui が行う。この層はそれを描き、
+// 押された場所をcommandへ変えて渡すだけにとどめる。
 package game
 
 import (
@@ -13,27 +14,29 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 
-	"github.com/ytasak/puyumon-coliseum/internal/anim"
 	"github.com/ytasak/puyumon-coliseum/internal/emoji"
 	"github.com/ytasak/puyumon-coliseum/internal/sprite"
 )
 
 // WindowTitle はDesktop起動時のウィンドウタイトル。
 // OSが描画するためマルチバイト文字を使用できる。
-const WindowTitle = "ぷゆもんコロシアム 155 Battle (PoC)"
+const WindowTitle = "ぷゆもんコロシアム 155 Battle"
 
-// backgroundColor はPoCの単色背景。
+// backgroundColor は盤面の背景。
 var backgroundColor = color.RGBA{R: 0x1b, G: 0x24, B: 0x38, A: 0xff}
 
-// overlayTextOriginX, overlayTextOriginY は識別用テキストの描画開始位置（論理座標）。
+// overlayTextOriginX, overlayTextOriginY は動作確認用テキストの描画開始位置（論理座標）。
+//
+// 相手の枠と重ならないよう、右上へ寄せる。
 const (
-	overlayTextOriginX = 16
-	overlayTextOriginY = 16
+	overlayTextOriginX = 332
+	overlayTextOriginY = 4
 )
 
 // Game は ebiten.Game の実装。
 //
-// 現時点ではComposite Sprite animation PoCの状態しか持たない。
+// 持つのは対戦の進行状態・描画に必要な資源・入力用のbufferだけで、
+// 対戦のルールは持たない。
 type Game struct {
 	// ticks は Update が呼ばれた回数。ゲームループが継続動作していることを
 	// 画面とtestの双方から観測できるようにするために保持する。
@@ -42,18 +45,6 @@ type Game struct {
 	// sprites はCharacterを描画する。Emoji素材のセル画像を内部で使い回すため、
 	// Gameと同じ寿命で1つだけ持つ。
 	sprites *sprite.Renderer
-
-	// player はキャラクターのanimation状態。キャラクター定義とは分けて持つ。
-	player anim.Player
-
-	// particles は表示中のEmoji particle。
-	particles anim.Particles
-
-	// tapCount はこれまでに受け取ったタップの数。
-	// 実機で入力が拾えているかを画面から確認するために数える。
-	tapCount int
-	// lastTap は最後にタップされた論理座標。
-	lastTap image.Point
 
 	// touchIDs, tapped は入力の取得に使い回すbuffer。
 	// 毎tick確保しないために保持する。
@@ -68,8 +59,6 @@ type Game struct {
 	seed uint64
 
 	// battle は対戦の進行状態。Battle Ruleは持たず、sessionを介してのみ対戦を進める。
-	//
-	// 画面への接続（入力の割り当てと描画）は、画面レイアウトと一緒に入れる。
 	battle *battleScene
 }
 
@@ -98,13 +87,19 @@ func New(seed uint64) (*Game, error) {
 
 // Update はEbitengineのtickごとに呼ばれる。
 //
-// ここではanimationの状態だけを進め、描画は行わない。
+// 押された場所をcommandへ変えて対戦へ渡し、進行とanimationを1 tick進める。
+// 対戦のルールはここでは判断しない。
 func (g *Game) Update() error {
+	for _, tap := range g.taps() {
+		if _, err := g.battle.tap(tap); err != nil {
+			return err
+		}
+	}
+
 	if err := g.battle.update(); err != nil {
 		return err
 	}
 
-	g.updateSpriteDemo(g.ticks)
 	g.ticks++
 	return nil
 }
@@ -126,20 +121,16 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		return
 	}
 
-	g.drawSpritePoC(screen)
+	g.battle.draw(screen, g.sprites)
 	ebitenutil.DebugPrintAt(screen, g.overlayText(), overlayTextOriginX, overlayTextOriginY)
 }
 
-// overlayText はPoC識別用テキストを返す。
+// overlayText は動作確認用テキストを返す。
 //
-// ebitenutil.DebugPrint は組み込みのASCIIフォントで描画するため、
+// ebitenutil.DebugPrintAt は組み込みのASCIIフォントで描画するため、
 // ここでは日本語やEmojiを含めない。画面のEmojiは同梱フォントで描いており、
-// この識別用テキストとは描画経路が別になっている。
+// この確認用テキストとは描画経路が別になっている。
 func (g *Game) overlayText() string {
-	return fmt.Sprintf(
-		"PUYUMON COLISEUM 155 BATTLE\nYTA-10 mobile safari PoC\n"+
-			"logical %dx%d / fps %.1f tps %.1f / ticks: %d\ntaps: %d / last: (%d, %d)",
-		LogicalWidth, LogicalHeight, ebiten.ActualFPS(), ebiten.ActualTPS(), g.ticks,
-		g.tapCount, g.lastTap.X, g.lastTap.Y,
-	)
+	return fmt.Sprintf("PUYUMON 155 %dx%d fps %.0f ticks: %d",
+		LogicalWidth, LogicalHeight, ebiten.ActualFPS(), g.ticks)
 }

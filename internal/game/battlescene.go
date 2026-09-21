@@ -3,6 +3,7 @@ package game
 import (
 	"fmt"
 
+	"github.com/ytasak/puyumon-coliseum/internal/anim"
 	"github.com/ytasak/puyumon-coliseum/internal/battle"
 	"github.com/ytasak/puyumon-coliseum/internal/battleui"
 	"github.com/ytasak/puyumon-coliseum/internal/bot"
@@ -93,6 +94,12 @@ type battleScene struct {
 	// message は画面に出す1行。cueを見せるたびに入れ替え、消化しきったら
 	// 次に何をすればよいかへ戻す。
 	message string
+
+	// players は両activeのanimation状態。キャラクター定義とは分けて持つ。
+	players [2]anim.Player
+
+	// particles は表示中のEmoji particle。
+	particles anim.Particles
 }
 
 // newBattleScene はseedから1試合分の状態を作る。
@@ -127,6 +134,11 @@ func (s *battleScene) busy() bool {
 // cueが残っていれば消化だけを行う。残っていなければ、相手の入力が要る状態かを見て
 // Botへ委ねる。playerの入力はsubmitから入る。
 func (s *battleScene) update() error {
+	for _, side := range battleSides {
+		s.players[side].Update()
+	}
+	s.particles.Update()
+
 	if s.busy() {
 		s.advanceCue()
 		return nil
@@ -161,10 +173,20 @@ func (s *battleScene) apply(cue battleui.Cue) {
 	}
 
 	switch c := cue.(type) {
+	case battleui.MoveUsedCue:
+		s.play(c.Actor.Side, anim.Attack, "")
 	case battleui.DamageCue:
 		s.setHP(c.Target, c.HP)
+		s.play(c.Target.Side, anim.Hit, "")
 	case battleui.HealCue:
 		s.setHP(c.Target, c.HP)
+		s.play(c.Target.Side, anim.Emphasis, "")
+	case battleui.StatusCue:
+		s.play(c.Target.Side, anim.Emphasis, statusParticle(c.Status))
+	case battleui.StatStageCue:
+		s.play(c.Target.Side, anim.Emphasis, "")
+	case battleui.SwitchOutCue:
+		s.play(c.Target.Side, anim.Emphasis, "")
 	case battleui.FaintCue:
 		// ダメージを伴わずに倒れることがある（自爆や、自爆が外れた場合）。
 		// このcueだけでHP 0・ひんしへ移してよい、というのがcueの契約。
@@ -172,11 +194,30 @@ func (s *battleScene) apply(cue battleui.Cue) {
 		if inTeam(c.Target.Index) {
 			s.shown.fainted[c.Target.Side][c.Target.Index] = true
 		}
+		s.play(c.Target.Side, anim.Hit, faintParticle)
 	case battleui.SwitchInCue:
 		if inTeam(c.Target.Index) {
 			s.shown.active[c.Target.Side] = c.Target.Index
 		}
+		s.play(c.Target.Side, anim.Emphasis, "")
 	}
+}
+
+// play はそのsideのanimationを再生し、必要ならparticleを出す。
+//
+// 使うのはYTA-9で作った3つのmotionとparticleだけ。交代とひんしにも
+// 専用のmotionは足さず、表示の切り替えと既存motionで表す。
+func (s *battleScene) play(side battle.Side, motion anim.Motion, particle string) {
+	if side != viewer && side != foe {
+		return
+	}
+	s.players[side].Play(motion)
+
+	if particle == "" {
+		return
+	}
+	anchor := spriteAnchors[side]
+	s.particles.Spawn(particle, anchor.X, anchor.Y-anchor.Scale/2, particleSize)
 }
 
 // setHP は見せているHPを更新する。

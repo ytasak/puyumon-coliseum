@@ -8,6 +8,7 @@ import (
 	"github.com/ytasak/puyumon-coliseum/internal/battle"
 	"github.com/ytasak/puyumon-coliseum/internal/battleui"
 	"github.com/ytasak/puyumon-coliseum/internal/roster"
+	"github.com/ytasak/puyumon-coliseum/internal/sprite"
 )
 
 // 画面の区切り（論理座標）。640x360の横持ちを前提にする。
@@ -243,3 +244,27 @@ func moveLabel(move battleui.MoveView) string {
 	}
 	return label
 }
+
+// 盤面の配置（論理座標）。手前を大きく、奥を小さくして向きを分かるようにする。
+var (
+	spriteAnchors = [2]sprite.Transform{
+		viewer: {X: 172, Y: 156, Scale: 92},
+		foe:    {X: 472, Y: 78, Scale: 70},
+	}
+
+	// infoPanels は名前・Level・HP・状態・控えを出す枠。
+	infoPanels = [2]image.Rectangle{
+		viewer: image.Rect(332, 118, 624, 200),
+		foe:    image.Rect(16, 16, 308, 98),
+	}
+)
+
+const (
+	// debugFontCharWidth, debugFontCharHeight は ebitenutil.DebugPrintAt が使う
+	// 組み込みフォントの1文字分の大きさ。中央揃えと折り返しの判断に使う。
+	debugFontCharWidth  = 6
+	debugFontCharHeight = 16
+
+	// particleSize はEmoji particleの大きさ。
+	particleSize = 28
+)

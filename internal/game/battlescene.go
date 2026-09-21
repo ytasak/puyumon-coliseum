@@ -81,6 +81,9 @@ type battleScene struct {
 	// pending は受理した自分の入力。相手待ちのあいだ二重入力を防ぐ。
 	pending battleui.Pending
 
+	// menu はコマンドのどの階層を開いているか。sessionの状態ではなく画面の都合。
+	menu menuState
+
 	// queue は再生待ちのcue。先頭から1つずつ消化する。
 	queue   []battleui.Cue
 	elapsed int
@@ -181,10 +184,18 @@ func (s *battleScene) setHP(ref battleui.Ref, hp int) {
 // 受け付けられるのは、いまの画面が出している選択肢だけ。cueの再生中や
 // 相手待ちのあいだは何も受け付けないので、二重入力にならない。
 // 合法性の最終判断はsessionが行い、ここでルールを複製しない。
-func (s *battleScene) submit(c command) (bool, error) {
+func (s *battleScene) submit(c command) (accepted bool, err error) {
 	if s.busy() {
 		return false, nil
 	}
+
+	// 受理できたときだけ階層を根へ戻す。弾かれたときに閉じてしまうと、
+	// 選び直すのにもう一度開く必要が出る。
+	defer func() {
+		if accepted {
+			s.menu = menuRoot
+		}
+	}()
 
 	switch s.view.Commands.Kind {
 	case battleui.CommandChooseLead:

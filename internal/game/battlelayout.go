@@ -190,6 +190,18 @@ func backButton() button {
 	return button{cell: commandCells - 1, label: "BACK", action: actionBack}
 }
 
+// visibleButtons は画面に出すボタンを返す。
+//
+// **cueを消化しているあいだは何も出さない。** 押せないボタンを見せ続けると、
+// 反応しない画面に見える。何が起きているかはメッセージ行が伝える。
+// viewのCommandsは書き換えないので、消化しきればそのまま元の選択肢へ戻る。
+func (s *battleScene) visibleButtons() []button {
+	if s.busy() {
+		return nil
+	}
+	return s.buttons()
+}
+
 // tap は押された位置を操作へ変える。受理したらtrueを返す。
 //
 // 階層を開く・戻るだけの操作ではsessionを呼ばない。

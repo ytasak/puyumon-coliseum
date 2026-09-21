@@ -186,6 +186,39 @@ func TestTapIsIgnoredWhileCuesPlay(t *testing.T) {
 	}
 }
 
+// 再生中はボタンを1つも出さない。
+//
+// 押せないボタンを見せ続けると、反応しない画面に見える。
+func TestNoButtonsAreShownWhileCuesPlay(t *testing.T) {
+	t.Parallel()
+
+	scene, ok := sceneAtReplacement(t)
+	if !ok {
+		t.Fatal("replacementへ到達する局面を作れなかった")
+	}
+	if len(scene.visibleButtons()) == 0 {
+		t.Fatal("再生前からボタンが出ていない")
+	}
+
+	tapOrFatal(t, scene, center(scene.buttons()[0].rect()))
+	if !scene.busy() {
+		t.Fatal("cueが積まれていない")
+	}
+
+	if got := scene.visibleButtons(); len(got) != 0 {
+		t.Errorf("再生中に %d 個のボタンが出ている", len(got))
+	}
+	// 選択肢そのものは消さない。消化しきれば戻る。
+	if len(scene.buttons()) == 0 {
+		t.Error("再生中にviewの選択肢まで消えている")
+	}
+
+	drainCues(t, scene)
+	if len(scene.visibleButtons()) == 0 {
+		t.Error("消化しきってもボタンが戻らない")
+	}
+}
+
 // 戦闘不能のあとは戻る先が無い。
 func TestReplacementHasNoBackButton(t *testing.T) {
 	t.Parallel()

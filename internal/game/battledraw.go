@@ -144,15 +144,8 @@ func (s *battleScene) drawMessage(screen *ebiten.Image) {
 }
 
 // drawCommands は選択肢を描く。
-//
-// **cueを消化しているあいだは何も出さない。** 押せないボタンを見せ続けると、
-// 反応しない画面に見える。何が起きているかはメッセージ行が伝える。
 func (s *battleScene) drawCommands(screen *ebiten.Image) {
-	if s.busy() {
-		return
-	}
-
-	for _, b := range s.buttons() {
+	for _, b := range s.visibleButtons() {
 		rect := b.rect()
 		fill := buttonFillColor
 		if b.disabled {

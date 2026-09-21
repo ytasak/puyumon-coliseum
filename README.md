@@ -142,6 +142,7 @@ internal/simulation/        Battle Engine を UI なしで回す simulation harn
 internal/balance/           roster combination の総当たりを集計して balance の指標にする層（UI 非依存）
 internal/singleplayer/      1 人用 1 試合の進行を管理する session layer（UI 非依存）
 internal/bot/               Bot の行動選択（UI 非依存）
+internal/battleui/          Battle 画面が並べるだけで済む形への変換（UI 非依存）
 docs/mobile-safari-poc.md   iPhone Safari / iframe 検証の手順と記録（YTA-10）
 docs/wasm-delivery.md       本番配信時の圧縮手順と実測サイズ（YTA-12）
 docs/loading-experience.md  初回ロード中の表示と、回線別のロード時間（YTA-13）
@@ -199,6 +200,13 @@ session の内部ではなく外側の actor なので、production code は `in
 `internal/singleplayer` も `internal/simulation` も import しない。session と繋ぐのは呼び出し側。
 乱数は Battle Engine とは別の列を使うので、Bot が何回引いても命中・急所・ダメージは変わらない。
 判断の仕様と、判断に使ってよい観測情報は Linear の YTA-29 を参照。
+
+`internal/battleui` は state と Event 列を、画面がそのまま並べられる形へ変換する層で、対戦のルールも進行も持たない。
+resolver を呼ばず、Bot の判断もせず、描画もしない。session を値で受け取るので、後の network client でも同じ層を使える。
+`internal/anim` と `internal/sprite` は推移的に Ebitengine へ届くため、この層からは import せず、
+animation は抽象的な cue として返して対応づけを UI 側に任せている。
+Snapshot は「落ち着いたあとの値」、cue は「途中経過」という分担で、Snapshot を読むこと自体は cue を生まない。
+表示に何を載せるかの仕様は Linear の YTA-30 を参照。
 
 `internal/anim` はアニメーションの**状態**だけを持ち、キャラクター定義も base transform も持たない。
 描画に使う transform は毎回 base から計算し直すため、再生を繰り返してもずれが蓄積しない。

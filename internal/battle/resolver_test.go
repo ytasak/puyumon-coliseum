@@ -888,3 +888,47 @@ func TestOutcomeDetectsDrawAndWinner(t *testing.T) {
 		t.Errorf("outcome() = %v, want %v", got, Ongoing)
 	}
 }
+
+// ValidateActionは片側のActionだけを確かめ、状態も乱数列も動かさない。
+func TestValidateActionChecksOneSideOnly(t *testing.T) {
+	t.Parallel()
+
+	rng := &scriptRNG{}
+	r := &Resolver{Data: testData(), RNG: rng}
+	state := turnState(t,
+		fighter(speciesRunner, 130, moveTackle),
+		fighter(speciesTarget, 100, moveTackle),
+	)
+	before := state
+
+	if err := r.ValidateAction(state, Player1, MoveAction{Slot: 0}); err != nil {
+		t.Errorf("取れるはずのActionが拒否された: %v", err)
+	}
+
+	noPP := state
+	noPP.Players[Player1].Team[0].Moves[0].PP = 0
+	if err := r.ValidateAction(noPP, Player1, MoveAction{Slot: 0}); !errors.Is(err, ErrInvalidAction) {
+		t.Errorf("PPの無い技のerrorが %v（%v のはず）", err, ErrInvalidAction)
+	}
+	if err := r.ValidateAction(state, Player1, StruggleAction{}); !errors.Is(err, ErrInvalidAction) {
+		t.Errorf("使える技が残っているStruggleのerrorが %v（%v のはず）", err, ErrInvalidAction)
+	}
+	if err := r.ValidateAction(state, Player1, SwitchAction{Target: 0}); !errors.Is(err, ErrInvalidAction) {
+		t.Errorf("場に出ている個体への交代のerrorが %v（%v のはず）", err, ErrInvalidAction)
+	}
+	if err := r.ValidateAction(state, Side(9), MoveAction{Slot: 0}); !errors.Is(err, ErrInvalidAction) {
+		t.Errorf("不正なsideのerrorが %v（%v のはず）", err, ErrInvalidAction)
+	}
+
+	// 片側だけを見るので、相手のActionが取れるかどうかには影響されない。
+	if err := r.ValidateAction(state, Player2, MoveAction{Slot: 0}); err != nil {
+		t.Errorf("相手側の検証が拒否された: %v", err)
+	}
+
+	if rng.calls != 0 {
+		t.Errorf("ValidateActionが乱数を %d 回引いた", rng.calls)
+	}
+	if !reflect.DeepEqual(state, before) {
+		t.Error("ValidateActionが状態を書き換えた")
+	}
+}

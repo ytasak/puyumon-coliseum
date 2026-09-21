@@ -21,7 +21,10 @@ var (
 
 	buttonFillColor     = color.RGBA{R: 0x2c, G: 0x3a, B: 0x52, A: 0xff}
 	buttonBorderColor   = color.RGBA{R: 0x5a, G: 0x6e, B: 0x90, A: 0xff}
-	buttonDisabledColor = color.RGBA{R: 0x1d, G: 0x25, B: 0x35, A: 0xff}
+	buttonDisabledColor = color.RGBA{R: 0x16, G: 0x1d, B: 0x2b, A: 0xff}
+
+	// disabledVeilColor は押せない枠へかける半透明。文字ごと沈ませる。
+	disabledVeilColor = color.RGBA{R: 0x1b, G: 0x24, B: 0x38, A: 0xb0}
 
 	hpTrackColor = color.RGBA{R: 0x14, G: 0x1b, B: 0x28, A: 0xff}
 	hpHighColor  = color.RGBA{R: 0x4a, G: 0xd0, B: 0x6a, A: 0xff}
@@ -153,6 +156,12 @@ func (s *battleScene) drawCommands(screen *ebiten.Image) {
 		}
 		drawPanel(screen, rect, fill, buttonBorderColor)
 		drawCenteredLabel(screen, b.label, float64(rect.Min.X+rect.Dx()/2), rect.Min.Y+(rect.Dy()-debugFontCharHeight)/2)
+
+		if b.disabled {
+			// 組み込みフォントは色を選べないので、文字の上から半透明をかけて
+			// まとめて沈ませる。枠の色だけでは押せないことが分かりにくかった。
+			dimPanel(screen, rect)
+		}
 	}
 }
 
@@ -219,6 +228,13 @@ func drawPanel(screen *ebiten.Image, rect image.Rectangle, fill, border color.Co
 
 	vector.DrawFilledRect(screen, x, y, w, h, fill, false)
 	vector.StrokeRect(screen, x, y, w, h, 1, border, false)
+}
+
+// dimPanel は枠の上に半透明をかけて沈ませる。
+func dimPanel(screen *ebiten.Image, rect image.Rectangle) {
+	vector.DrawFilledRect(screen,
+		float32(rect.Min.X), float32(rect.Min.Y), float32(rect.Dx()), float32(rect.Dy()),
+		disabledVeilColor, false)
 }
 
 // drawHPBar は残量に応じて色の変わるHPバーを描く。

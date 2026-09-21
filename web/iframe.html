@@ -76,8 +76,8 @@
   <p>配信時と同じく iframe へ埋め込んだ状態を確認するページ。
      枠内の ticks が増え続けていれば Update / Draw が動いている。</p>
   <ul>
-    <li>枠内をタップして、指を置いた位置とマーカーが一致するか</li>
-    <li>ボタンを押したときに、押したボタンの動きが出るか</li>
+    <li>枠内のボタンを押して、押したところが反応するか</li>
+    <li>技を選んだあと、演出が流れてからまた選べるようになるか</li>
     <li>枠内を操作している間、このページ自体がスクロールしないか</li>
   </ul>
   <h2>landscape frame</h2>
@@ -87,7 +87,7 @@
        同一オリジンの main.wasm を fetch できない。この2つが必要最小限。 -->
   <div class="frame">
     <iframe src="index.html"
-            title="ぷゆもんコロシアム 155 Battle (PoC)"
+            title="ぷゆもんコロシアム 155 Battle"
             sandbox="allow-scripts allow-same-origin"></iframe>
   </div>
   <h2>portrait frame</h2>
@@ -95,7 +95,7 @@
      ゲーム画面がそのまま縮んで出ていたら、向きの判定が効いていない。</p>
   <div class="frame portrait">
     <iframe src="index.html"
-            title="ぷゆもんコロシアム 155 Battle (PoC) - portrait"
+            title="ぷゆもんコロシアム 155 Battle - portrait"
             sandbox="allow-scripts allow-same-origin"></iframe>
   </div>
 

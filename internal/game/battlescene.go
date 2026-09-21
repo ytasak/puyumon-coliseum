@@ -89,6 +89,10 @@ type battleScene struct {
 	elapsed int
 
 	shown shownState
+
+	// message は画面に出す1行。cueを見せるたびに入れ替え、消化しきったら
+	// 次に何をすればよいかへ戻す。
+	message string
 }
 
 // newBattleScene はseedから1試合分の状態を作る。
@@ -152,6 +156,10 @@ func (s *battleScene) advanceCue() {
 
 // apply はcue 1つ分を見せている値へ反映する。
 func (s *battleScene) apply(cue battleui.Cue) {
+	if message := cueMessage(cue, viewer); message != "" {
+		s.message = message
+	}
+
 	switch c := cue.(type) {
 	case battleui.DamageCue:
 		s.setHP(c.Target, c.HP)
@@ -403,6 +411,7 @@ func (s *battleScene) refresh() {
 	}
 	s.view = view
 	s.shown = shownFrom(view)
+	s.message = promptMessage(view)
 }
 
 // shownFrom は落ち着いたあとの値から、見せている値を作り直す。

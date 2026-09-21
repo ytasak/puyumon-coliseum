@@ -1,7 +1,7 @@
-# CLAUDE.md
+# AGENTS.md
 
-このファイルは、**ぷゆもんコロシアム 155 Battle** リポジトリで Claude Code が作業するときに
-毎回守る恒久的な開発規約を定義する。
+このファイルは、**ぷゆもんコロシアム 155 Battle** リポジトリでコーディングエージェントが作業するときに
+毎回守る恒久的な開発規約を定義する。Codex と Claude Code のどちらからも読まれる共通の規約である。
 
 ゲーム仕様・機能要件・バランス値・キャラクター定義はここに書かない。それらは Linear にある。
 本ファイルは「何を作るか」ではなく「どう開発するか」だけを扱う。
@@ -13,7 +13,7 @@
 - 役割分担
   - Product Owner: ユーザー。面白さ・操作感・採否を決定する
   - Design / Architecture / PM: ChatGPT。仕様・設計・Issue 分解・Acceptance Criteria を Linear へ残す
-  - Implementation Agent: Claude Code。Linear Issue とリポジトリを読み、実装・test・build・必要な documentation 更新を行う
+  - Implementation Agent: コーディングエージェント（Codex / Claude Code）。Linear Issue とリポジトリを読み、実装・test・build・必要な documentation 更新を行う
 
 参照先:
 
@@ -22,6 +22,15 @@
 
 本ファイルは AI Development Protocol をリポジトリ側から補完するものであり、置き換えるものではない。
 
+### このファイルの置き場所について
+
+- 本リポジトリの開発規約は **`AGENTS.md` 1 枚**に集約する。Codex はこれを読み、Claude Code も
+  `CLAUDE.md` が無い場合は `AGENTS.md` を読む
+- **`CLAUDE.md` / `CLAUDE.local.md` を追加しない。** 追加すると Claude Code が `AGENTS.md` を
+  読まなくなり、規約が片方のエージェントにしか効かない状態になる。
+  どうしても個人用の追記が必要な場合は `AGENTS.md` を直接更新するか、
+  Claude Code の **Project instructions** 設定を `claude-md-and-agents-md` にしてから追加する
+
 ## 1. Source of Truth
 
 **Linear が Single Source of Truth。**
@@ -29,7 +38,7 @@
 | 対象 | 正とするもの |
 | --- | --- |
 | gameplay / product / feature 仕様、Acceptance Criteria | Linear |
-| リポジトリでの作業方法、恒久的 engineering convention | CLAUDE.md |
+| リポジトリでの作業方法、恒久的 engineering convention | AGENTS.md |
 
 - 会話の中だけで決まった実装仕様は未確定として扱う。Linear へ反映されるまで実装しない
 - コードを先に正として Linear を後追いさせない。仕様変更が必要なら Linear を先に更新する

@@ -7,17 +7,17 @@ Client は Go + [Ebitengine](https://ebitengine.org/) で実装し、最終的�
 [ぷゆもんコロシアム 155 Battle](https://linear.app/ytask/project/ぷゆもんコロシアム-155-battle-2372a3a4229f) プロジェクト。
 開発の進め方は Project Document「AI Development Protocol」に従う。
 
-現在のリポジトリ状態は Milestone「Ebitengine / WASM Emoji PoC」を一通り実装した、
-Desktop と WebAssembly の両方で起動し、タップでアニメーションを発火できる
-Composite Emoji のゲームクライアント。
+現在のリポジトリ状態は、Desktop と WebAssembly の両方で **Bot と 1 試合を最後まで遊べる**
+1 人用の対戦クライアント。3 体ずつの配布から lead 選択、技と交代、戦闘不能後の交代、
+決着と次の対戦まで画面から操作できる。
 
 実機 iPhone Safari / iframe での検証は完了しており、**この構成を本実装へ採用する（Go）**という結論。
-検証結果と持ち越した課題は [docs/mobile-safari-poc.md](docs/mobile-safari-poc.md) にある。
+検証結果と持ち越した課題は [docs/mobile-safari-poc.md](docs/mobile-safari-poc.md) にある
+（当時の PoC 画面についての記録で、現在の画面とは異なる）。
 
-ここから Generation I 準拠の Battle Engine を `internal/battle` に実装していく。
-現在あるのは domain model と seeded RNG までで、ダメージ計算などの mechanics はこれから追加する。
 対戦仕様の正は Linear の Project Document「Battle Rules Specification」。
 active / reserve や multi-turn state といった用語も、同 Document の Glossary の意味で使う。
+キャラクターの見た目は実機確認のための暫定で、デザインは未確定。
 
 ## 必要環境
 
@@ -37,13 +37,15 @@ make run          # go run ./cmd/game と同じ
 
 ウィンドウを縦長にすると、ゲーム画面の代わりに横持ちを促す画面が出る。横に広げれば元に戻る。
 
-- 左上: PoC 識別用テキスト、`fps` / `tps`、tick、タップ回数、最後のタップ座標
-- 中央: ナッシー型（`🌴` + `🥺 😫 🤪`）。待機アニメーションで上下し、待機中は `💤` が出る
-- 下部: `ATTACK` / `HIT` / `EMPHASIS` のタップ領域。それぞれ `⚡` / `💥` / `❄️` が出る
-- タップした位置: 黄色い十字の印
+- 上段左 / 中段右: 相手と自分の枠。名前と Level、HP バーと数値、状態、控え 2 体の簡易状態
+- 盤面: 両者の場に出ている 1 体。Composite Emoji で描き、技や被弾に合わせて動く
+- メッセージ行: 直前に起きたことを 1 行で出す
+- 下部: 選択肢。最初は出す 1 体、対戦中は `FIGHT` / `SWITCH`、技は 4 つと残り PP
+- 右上: 論理解像度・`fps`・tick
 
-動き終わったあとに元の位置・大きさへ戻り、繰り返しても少しずつずれていかなければ成立している。
-印が押した場所に出ていれば、入力座標が論理座標へ正しく変換されている。
+まず出す 1 体を選ぶと対戦が始まる。相手の手番は Bot が決める。
+演出を再生しているあいだは選択肢を出さず、入力も受け付けない。
+決着すると結果が出て、`NEW MATCH` で次の対戦を始められる。
 
 ウィンドウを閉じるとアプリケーションが終了する。
 
@@ -132,7 +134,11 @@ cmd/serve/main.go           WASM 動作確認用のローカル静的ファイ�
 cmd/balance/main.go         balance simulation の batch 実行。集計結果を JSON で標準出力へ書く
 internal/game/game.go       Game 型（ebiten.Game の Update / Draw）と描画
 internal/game/layout.go     論理解像度の定数と Layout
-internal/game/spritescene.go PoC の画面構成、キャラクター定義、タップ領域
+internal/game/battlescene.go 対戦画面の状態。入力の受け口と演出の再生
+internal/game/battlelayout.go 画面の区切りとボタンの位置、当たり判定
+internal/game/battledraw.go  対戦画面の描画
+internal/game/battlemessage.go 対戦の経過を出す文字列
+internal/game/characters.go 6 体の見た目（暫定）
 internal/game/input.go      マウス / タッチの取得
 internal/sprite/            複数 Emoji を 1 体として定義・描画する Composite Sprite 層
 internal/anim/              アニメーションの状態管理と Emoji particle
@@ -223,7 +229,7 @@ Linear に明示されていない箇所について、以下を採用した。�
 | 論理解像度 | 640x360 (16:9) 固定 | **横持ち前提の確定値**（YTA-11）。初代準拠の対面レイアウト（両者のアクティブ・控え・HP・技 4 つ・メッセージ）を 1 画面へ収めるため横長を採る。`internal/game/layout.go` の定数一箇所で管理し、実ウィンドウサイズとは分離する |
 | 縦持ちで開かれたとき | ゲーム画面の代わりに横持ちを促す画面を出す | iOS Safari はページから画面の向きをロックできず、促すことしかできない。縦長のまま出すと 16:9 が高さの 3 分の 1 ほどしか使えない。`Update` は止めないので、横にすればそのまま続きが見える |
 | 初期ウィンドウ | 論理解像度の 2 倍 (1280x720) | Desktop で確認しやすいサイズ。論理解像度には影響しない |
-| 画面テキスト | `ebitenutil.DebugPrintAt`（組み込み ASCII フォント） | 識別用テキストは PoC 用途なので追加フォントを持ち込まない。ASCII のみで構成している。日本語の UI フォントは別 Issue の範囲 |
+| 画面テキスト | `ebitenutil.DebugPrintAt`（組み込み ASCII フォント） | 追加フォントを持ち込まない。対戦の文言・ボタン・確認用テキストはすべて ASCII で組み、キャラクターは internal ID を大文字にして指す。日本語の UI フォントと表示名は別 Issue の範囲 |
 | Emoji フォント | Twemoji Mozilla 0.7.0（COLRv0）を同梱 | Ebitengine v2.10 は COLRv0 を描画できるが **COLRv1 は非対応**。候補中もっとも小さく（1.4 MB）、ベクターで拡大に強く、送り幅が正方 1em で共通の描画単位を定義しやすい。比較の実測値は [docs/emoji-rendering.md](docs/emoji-rendering.md) |
 | Emoji の描画単位 | 128px 四方のセル画像 1 枚 = Emoji 1 文字。アンカーは em box の中心 | 表示サイズをセルの拡大縮小だけで決め、Emoji ごとの位置補正を不要にする。セルをキャッシュするので毎フレームのグリフ生成も起きない |
 | Emoji のフォールバック | OS のフォントにフォールバックしない | Desktop とブラウザで同じ絵を出すため、同梱フォントだけで描画結果を固定する |

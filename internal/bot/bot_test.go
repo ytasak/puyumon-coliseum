@@ -16,6 +16,7 @@ const (
 	moveLull   = battle.MoveID("lull")   // ノーマル 威力0 ねむり
 	moveBoom   = battle.MoveID("boom")   // ノーマル 170 自爆
 	moveHaste  = battle.MoveID("haste")  // エスパー 威力0 Speed+2
+	moveNudge  = battle.MoveID("nudge")  // ノーマル 30 必中（弱い攻撃技）
 )
 
 const (
@@ -36,6 +37,7 @@ func testData() battle.Data {
 			moveLull:   {ID: moveLull, Type: battle.TypeNormal, Power: 0, Accuracy: battle.MaxAccuracy, MaxPP: 10, Effect: battle.EffectSleep},
 			moveBoom:   {ID: moveBoom, Type: battle.TypeNormal, Power: 170, Accuracy: battle.MaxAccuracy, MaxPP: 5, Effect: battle.EffectExplode},
 			moveHaste:  {ID: moveHaste, Type: battle.TypePsychic, Power: 0, Accuracy: battle.MaxAccuracy, MaxPP: 30, Effect: battle.EffectSpeedUp2},
+			moveNudge:  {ID: moveNudge, Type: battle.TypeNormal, Power: 30, Accuracy: battle.MaxAccuracy, MaxPP: 30},
 		},
 		Species: map[battle.SpeciesID]battle.Species{
 			speciesPlain: {ID: speciesPlain, Typing: battle.SingleType(battle.TypeNormal), BaseSpeed: 100},
@@ -116,6 +118,40 @@ func TestPrefersSuperEffectiveMove(t *testing.T) {
 	assertMove(t, action, 1)
 }
 
+// 相性はSTABより優先される。STAB等倍より、STABなしの2倍を選ぶ。
+func TestEffectivenessOutweighsStab(t *testing.T) {
+	t.Parallel()
+
+	state := stateOf(t,
+		[battle.TeamSize]battle.Pokemon{
+			// ノーマルがSTAB付きのtackleと、STABの無いvineを持つ。
+			fighter(t, speciesPlain, moveTackle, moveVine),
+			fighter(t, speciesPlain, moveTackle),
+			fighter(t, speciesPlain, moveTackle),
+		},
+		team(t, speciesWave),
+	)
+
+	assertMove(t, New(testData(), 1).Action(state, battle.Player1), 1)
+}
+
+// 無効化される技は、威力で上回っていても選ばない。
+func TestNeverPicksAMoveTheTargetIsImmuneTo(t *testing.T) {
+	t.Parallel()
+
+	state := stateOf(t,
+		[battle.TeamSize]battle.Pokemon{
+			// sparkはじめんへ無効。tackleは等倍で通る。
+			fighter(t, speciesVolt, moveSpark, moveTackle),
+			fighter(t, speciesDune, moveTackle),  // 改善しない控え
+			fighter(t, speciesPlain, moveTackle), // 同上
+		},
+		team(t, speciesDune),
+	)
+
+	assertMove(t, New(testData(), 1).Action(state, battle.Player1), 1)
+}
+
 // 既に状態異常の相手へねむり技を撃ち続けない。
 func TestAvoidsStatusMoveOnAStatusedTarget(t *testing.T) {
 	t.Parallel()
@@ -180,11 +216,17 @@ func TestDoesNotBoostSpeedAtTheCap(t *testing.T) {
 	t.Parallel()
 
 	own := [battle.TeamSize]battle.Pokemon{
-		fighter(t, speciesPlain, moveHaste, moveTackle),
+		// 弱い攻撃技と並べて、能力上昇が選ばれ得る状況にしておく。
+		fighter(t, speciesPlain, moveHaste, moveNudge),
 		fighter(t, speciesPlain, moveTackle),
 		fighter(t, speciesPlain, moveTackle),
 	}
 
+	// まだ上げられるなら上げる。
+	room := stateOf(t, own, team(t, speciesWave))
+	assertMove(t, New(testData(), 1).Action(room, battle.Player1), 0)
+
+	// 上限なら上げても意味が無いので、攻撃する。
 	capped := stateOf(t, own, team(t, speciesWave))
 	capped.Players[battle.Player1].Team[0].Stages.Speed = battle.StageMax
 	assertMove(t, New(testData(), 1).Action(capped, battle.Player1), 1)

@@ -14,6 +14,7 @@
   - Product Owner: ユーザー。面白さ・操作感・採否を決定する
   - Design / Architecture / PM: ChatGPT。仕様・設計・Issue 分解・Acceptance Criteria を Linear へ残す
   - Implementation Agent: コーディングエージェント（Codex / Claude Code）。Linear Issue とリポジトリを読み、実装・test・build・必要な documentation 更新を行う
+  - Review Agent: 実装担当とは別の Claude Code。PR の最新 head の実際の差分・test・Acceptance Criteria・checks を確認し、blocking な問題と未検証事項を報告する
 
 参照先:
 
@@ -209,8 +210,10 @@ Ebitengineを採用した最小のゲームクライアントを追加する。
 ```
 
 - push と PR 作成は、作業の実装・検証が済んだら個別の事前確認なしで実行してよい
-- PR は最新 head の実際の差分・tests・Acceptance Criteria・checks をレビューし、blocking な問題が
-  無ければマージしてよい。マージ前に Issue を Done にしない
+- PR は実装担当とは別の Claude Code が最新 head の実際の差分・tests・Acceptance Criteria・checks を
+  レビューする。レビュー結果は Codex と実装担当の双方へ伝え、Codex が修正依頼と再レビューを管理する。
+  Codex は結果と未検証事項を確認し、blocking な問題が無ければマージしてよい。
+  head が更新された場合は更新後を再レビューする。マージ前に Issue を Done にしない
 - リモートリポジトリ作成・force push・公開・deploy など、上記以外の外部へ影響する操作は
   実行前にユーザーの確認を取る
 - PR を作成する場合は、該当する Linear Issue があればそのリンク、Summary、Implementation notes、検証結果、

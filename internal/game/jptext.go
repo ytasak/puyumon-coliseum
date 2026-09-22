@@ -134,8 +134,8 @@ func statName(stat battle.Stat) string {
 	return unknownName
 }
 
-// textColor は画面テキストの色。
-var textColor = color.RGBA{R: 0xe6, G: 0xec, B: 0xf5, A: 0xff}
+// textColor は画面テキストの色。4階調のうち最も暗い階調を使う。
+var textColor = toneDarkest
 
 // drawText は文字列の左上を (x, y) に置いて描く。
 //
@@ -162,6 +162,28 @@ func drawCenteredText(dst *ebiten.Image, face *text.GoTextFace, s string, center
 	}
 	width, _ := text.Measure(s, face, uifont.LineHeight)
 	drawText(dst, face, s, int(centerX-width/2), y)
+}
+
+// drawTextWithColor は色を指定して文字列を描く。
+func drawTextWithColor(dst *ebiten.Image, face *text.GoTextFace, s string, x, y int, c color.Color) {
+	if s == "" {
+		return
+	}
+	op := &text.DrawOptions{}
+	op.GeoM.Translate(float64(x), float64(y))
+	op.ColorScale.ScaleWithColor(c)
+	op.LineSpacing = uifont.LineHeight
+	text.Draw(dst, s, face, op)
+}
+
+// drawRightText は右端を揃えて文字列を描く。
+//
+// Lvや残りPPのように、値の桁数が変わっても右端を保ちたい場所で使う。
+func drawRightText(dst *ebiten.Image, face *text.GoTextFace, s string, right, y int) {
+	if s == "" {
+		return
+	}
+	drawText(dst, face, s, right-int(textWidth(face, s)), y)
 }
 
 // textWidth は文字列の表示幅を返す。枠へ収まるかの判断に使う。

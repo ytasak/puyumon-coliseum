@@ -1,8 +1,6 @@
 package game
 
 import (
-	"image/color"
-
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
@@ -40,9 +38,9 @@ const (
 )
 
 var (
-	// dimColor は今の向き（縦）。bright側との対比で、どちらへ向かうかを示す。
-	rotateDimColor    = color.RGBA{R: 0x4a, G: 0x58, B: 0x70, A: 0xff}
-	rotateBrightColor = color.RGBA{R: 0xff, G: 0xd0, B: 0x4a, A: 0xff}
+	// rotateDimColor は今の向き（縦）。bright側との対比で、どちらへ向かうかを示す。
+	rotateDimColor    = toneLight
+	rotateBrightColor = toneDarkest
 )
 
 // drawRotatePrompt は横持ちを促す画面を描く。

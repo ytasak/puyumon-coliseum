@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image"
 
-	"github.com/ytasak/puyumon-coliseum/internal/battle"
 	"github.com/ytasak/puyumon-coliseum/internal/battleui"
 	"github.com/ytasak/puyumon-coliseum/internal/roster"
 	"github.com/ytasak/puyumon-coliseum/internal/sprite"
@@ -131,7 +130,7 @@ func leadButtons(options []battleui.TeamOption) []button {
 	for i, option := range options {
 		buttons = append(buttons, button{
 			cell:    i,
-			label:   speciesLabel(option.Species),
+			label:   speciesName(option.Species),
 			command: command{kind: commandLead, index: option.Index},
 		})
 	}
@@ -177,7 +176,7 @@ func switchButtons(options []battleui.TeamOption) []button {
 	for i, option := range options {
 		buttons = append(buttons, button{
 			cell:    i,
-			label:   speciesLabel(option.Species),
+			label:   speciesName(option.Species),
 			command: command{kind: commandSwitch, index: option.Index},
 		})
 	}
@@ -234,11 +233,6 @@ func (s *battleScene) tap(p image.Point) (bool, error) {
 	return false, nil
 }
 
-// speciesLabel は一覧に出す名前。表示名が未確定なのでinternal IDを大文字で使う。
-func speciesLabel(species battle.SpeciesID) string {
-	return speciesName(species)
-}
-
 // moveLabel は技のボタンに出す文字列。
 //
 // 技名・タイプ・残りPPを1行に収める。タイプは定義から引くだけで、
@@ -274,11 +268,6 @@ var (
 )
 
 const (
-	// debugFontCharWidth, debugFontCharHeight は ebitenutil.DebugPrintAt が使う
-	// 組み込みフォントの1文字分の大きさ。中央揃えと折り返しの判断に使う。
-	debugFontCharWidth  = 6
-	debugFontCharHeight = 16
-
 	// particleSize はEmoji particleの大きさ。
 	particleSize = 28
 )

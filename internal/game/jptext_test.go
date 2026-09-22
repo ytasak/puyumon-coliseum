@@ -2,10 +2,12 @@ package game
 
 import (
 	"fmt"
+	"image"
 	"sync"
 	"testing"
 
 	text "github.com/hajimehoshi/ebiten/v2/text/v2"
+	"github.com/hajimehoshi/ebiten/v2/vector"
 
 	"github.com/ytasak/puyumon-coliseum/internal/battle"
 	"github.com/ytasak/puyumon-coliseum/internal/battleui"
@@ -167,13 +169,16 @@ func TestInfoHeaderFitsInThePanel(t *testing.T) {
 	}
 }
 
-// 控えの略記が18pxの枠へ収まり、文字の途中で割れない。
+// 控えの略記が枠へ収まり、文字の途中で割れない。
+//
+// **縦も見る。** DotGothic16 の行の高さは ascent + descent = 23.2px あり、
+// 18px の枠より大きい。左上を指定して描くと下へ約3pxはみ出していた。
+// 実際に塗られるインクが枠の中に入っていることを、描画と同じlayoutで確かめる。
 func TestShortLabelFitsInTheReserveBox(t *testing.T) {
 	t.Parallel()
 
 	face := testFace(t)
-	// drawReserves の dotSize。左右に1pxずつ余白を取る。
-	const limit = 18 - 2
+	box := image.Rect(0, 0, reserveChipSize, reserveChipSize)
 
 	for _, character := range roster.All() {
 		label := shortLabel(character.ID)
@@ -187,10 +192,96 @@ func TestShortLabelFitsInTheReserveBox(t *testing.T) {
 		if missing := uifont.MissingGlyphs(face, label); len(missing) > 0 {
 			t.Errorf("略記 %q が文字の途中で割れている: %q", label, missing)
 		}
-		if width := textWidth(face, label); width > limit {
-			t.Errorf("略記 %q が控えの枠に収まらない（%.0f px > %d px）", label, width, limit)
+
+		ink, ok := boxTextInk(face, label, box)
+		if !ok {
+			t.Errorf("略記 %q が何も塗らない", label)
+			continue
+		}
+		if ink.Min.Y < float64(box.Min.Y) || ink.Max.Y > float64(box.Max.Y) {
+			t.Errorf("略記 %q が枠から縦にはみ出す（y %.1f..%.1f、枠は %d..%d）",
+				label, ink.Min.Y, ink.Max.Y, box.Min.Y, box.Max.Y)
+		}
+		if ink.Min.X < float64(box.Min.X) || ink.Max.X > float64(box.Max.X) {
+			t.Errorf("略記 %q が枠から横にはみ出す（x %.1f..%.1f、枠は %d..%d）",
+				label, ink.Min.X, ink.Max.X, box.Min.X, box.Max.X)
 		}
 	}
+}
+
+// 枠の中央へ描く指定は、左上指定より縦のはみ出しが小さい。
+//
+// 「中央へ寄せた」ことが効いていることを固定する。左上指定に戻すと落ちる。
+func TestBoxTextIsCenteredNotTopAligned(t *testing.T) {
+	t.Parallel()
+
+	face := testFace(t)
+	box := image.Rect(0, 0, reserveChipSize, reserveChipSize)
+
+	centered, ok := boxTextInk(face, "ホ", box)
+	if !ok {
+		t.Fatal("インクが取れない")
+	}
+	topLeft, ok := topLeftTextInk(face, "ホ", box)
+	if !ok {
+		t.Fatal("インクが取れない")
+	}
+
+	if topLeft.Max.Y <= float64(box.Max.Y) {
+		t.Fatalf("technical: 左上指定でもはみ出していない（%.1f <= %d）。前提が変わった",
+			topLeft.Max.Y, box.Max.Y)
+	}
+	if centered.Max.Y > topLeft.Max.Y {
+		t.Errorf("中央寄せのほうが下へ出ている（%.1f > %.1f）", centered.Max.Y, topLeft.Max.Y)
+	}
+}
+
+// bounds は塗られた範囲。
+type bounds struct {
+	Min, Max struct{ X, Y float64 }
+}
+
+// boxTextInk は drawTextInBox が実際に塗る範囲を返す。
+//
+// **描画と同じ boxTextLayout を使う。** 設定を書き写すと、収まると
+// 確かめた位置と実際に描く位置がずれる。
+func boxTextInk(face *text.GoTextFace, s string, box image.Rectangle) (bounds, bool) {
+	layout := boxTextLayout()
+	cx, cy := boxCenter(box)
+	return inkBounds(face, s, &layout, cx, cy)
+}
+
+// topLeftTextInk は左上を指定して描いたときに塗られる範囲を返す。比較用。
+func topLeftTextInk(face *text.GoTextFace, s string, box image.Rectangle) (bounds, bool) {
+	layout := text.LayoutOptions{LineSpacing: uifont.LineHeight}
+	return inkBounds(face, s, &layout, float64(box.Min.X), float64(box.Min.Y))
+}
+
+// inkBounds は指定のlayoutと原点で描いたときのglyphインクの範囲を返す。
+func inkBounds(face *text.GoTextFace, s string, layout *text.LayoutOptions, originX, originY float64) (bounds, bool) {
+	var path vector.Path
+	text.AppendVectorPath(&path, s, face, layout)
+
+	vs, _ := path.AppendVerticesAndIndicesForFilling(nil, nil)
+	if len(vs) == 0 {
+		return bounds{}, false
+	}
+
+	var b bounds
+	b.Min.X, b.Min.Y = float64(vs[0].DstX), float64(vs[0].DstY)
+	b.Max.X, b.Max.Y = b.Min.X, b.Min.Y
+	for _, v := range vs {
+		x, y := float64(v.DstX), float64(v.DstY)
+		b.Min.X = min(b.Min.X, x)
+		b.Min.Y = min(b.Min.Y, y)
+		b.Max.X = max(b.Max.X, x)
+		b.Max.Y = max(b.Max.Y, y)
+	}
+	b.Min.X += originX
+	b.Max.X += originX
+	b.Min.Y += originY
+	b.Max.Y += originY
+	return b, true
 }
 
 // 横持ちを促す文面が画面へ収まる。

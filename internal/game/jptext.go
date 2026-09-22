@@ -1,6 +1,7 @@
 package game
 
 import (
+	"image"
 	"image/color"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -167,4 +168,37 @@ func drawCenteredText(dst *ebiten.Image, face *text.GoTextFace, s string, center
 func textWidth(face *text.GoTextFace, s string) float64 {
 	width, _ := text.Measure(s, face, uifont.LineHeight)
 	return width
+}
+
+// boxTextLayout は枠の中心へ文字を置くためのlayout設定。
+//
+// **描画とtestの両方がこれを使う。** 別々に設定を書くと、枠に収まるか
+// 確かめたつもりの位置と実際に描く位置がずれる。
+func boxTextLayout() text.LayoutOptions {
+	return text.LayoutOptions{
+		LineSpacing:    uifont.LineHeight,
+		PrimaryAlign:   text.AlignCenter,
+		SecondaryAlign: text.AlignCenter,
+	}
+}
+
+// drawTextInBox は枠の中心へ文字を描く。
+//
+// 行の高さ（ascent + descent = 23.2px）は小さな枠より大きいことがあるが、
+// 実際に塗られるのはglyphのインクだけで、そちらは枠へ収まる。
+// 左上を指定して描くとdescentのぶん下へずれ、枠から出る。
+func drawTextInBox(dst *ebiten.Image, face *text.GoTextFace, s string, box image.Rectangle) {
+	if s == "" {
+		return
+	}
+	op := &text.DrawOptions{}
+	op.LayoutOptions = boxTextLayout()
+	op.GeoM.Translate(boxCenter(box))
+	op.ColorScale.ScaleWithColor(textColor)
+	text.Draw(dst, s, face, op)
+}
+
+// boxCenter は枠の中心を返す。
+func boxCenter(box image.Rectangle) (x, y float64) {
+	return float64(box.Min.X) + float64(box.Dx())/2, float64(box.Min.Y) + float64(box.Dy())/2
 }

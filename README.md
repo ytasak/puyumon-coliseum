@@ -63,8 +63,9 @@ Desktop 版と同じ内容が表示され、Emoji の見た目が Desktop と一
 iframe へ埋め込んだ状態を確認する場合は <http://localhost:8080/iframe.html> を開く。
 1 体を選んで対戦が進み、演出が流れて次の選択肢が出れば iframe 内でも Update / Draw が継続している。
 
-`main.wasm` は約 21 MB ある。`make serve` は圧縮しないので初回ロードには時間がかかる。
-本番配信では事前圧縮して配るため、実際の転送量は brotli で約 3.8 MB になる。
+`main.wasm` は約 23 MB ある（日本語 UI フォントを同梱したぶんを含む）。
+`make serve` は圧縮しないので初回ロードには時間がかかる。本番配信では事前圧縮して配る。
+brotli の実測は 21.4 MB 時点の 3.8 MB で、**フォント同梱後は測り直していない**。
 配信手順は [docs/wasm-delivery.md](docs/wasm-delivery.md)、サイズの内訳は
 [docs/emoji-rendering.md](docs/emoji-rendering.md) を参照。
 
@@ -256,7 +257,7 @@ Linear に明示されていない箇所について、以下を採用した。�
 | `wasm_exec.js` | `make wasm` が GOROOT からコピーし、commit しない | Go の同梱物なのでツールチェーンとバージョンを一致させる。生成物を commit しない方針とも揃う |
 | ローカル配信サーバ | 標準ライブラリだけの Go 実装（`cmd/serve`） | `.wasm` の Content-Type が `application/wasm` でないと `instantiateStreaming` が失敗する。Go の `mime` なら確実で、外部ツールへの依存も増えない |
 | 配信時のキャッシュ | `Cache-Control: no-store` | 再ビルドした `.wasm` が古いキャッシュのまま検証される事故を防ぐ |
-| 本番配信の圧縮 | `make dist` で事前圧縮した `.br` / `.gz` を生成し、配信側は `Content-Encoding` を付けて返す | brotli -q11 で 21.4 MB → 3.8 MB。21 MB の `.wasm` は CDN の自動圧縮のサイズ上限を超えやすく、事前圧縮のほうが確実。圧縮は配信の設定なのでゲーム側のコードは変えない |
+| 本番配信の圧縮 | `make dist` で事前圧縮した `.br` / `.gz` を生成し、配信側は `Content-Encoding` を付けて返す | brotli -q11 で 21.4 MB → 3.8 MB（YTA-12 時点の実測。日本語フォント同梱後は測り直していない）。20 MB を超える `.wasm` は CDN の自動圧縮のサイズ上限を超えやすく、事前圧縮のほうが確実。圧縮は配信の設定なのでゲーム側のコードは変えない |
 | `-ldflags="-s -w"` | 使わない | 圧縮後で 0.06 MB しか減らない一方、panic 時のシンボルを失う |
 | Battle Engine の位置 | `internal/battle`。Ebitengine を import しない | 仕様書が求める UI 非依存の pure domain。import していないことを test で検査しており、うっかり依存が入れば落ちる |
 | チームの表現 | `[3]Pokemon` の固定長配列 + 場に出ている index | 本作は 3 体固定なので型で表せる。交代しても index が変わらないため、Event から常に同じ index で指せる |

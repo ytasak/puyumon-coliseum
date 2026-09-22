@@ -40,6 +40,14 @@ const (
 	// hpMidPercent, hpLowPercent は色が変わる残量。
 	hpMidPercent = 50
 	hpLowPercent = 20
+
+	// reserveChipSize, reserveChipGap は控えを並べる小さな枠の大きさと間隔。
+	//
+	// 枠には略記を全角1文字だけ入れる。**行の高さ（ascent + descent）は
+	// この枠より大きい**ので、左上を指定して描くと下へはみ出す。
+	// drawTextInBox でインクを枠の中央へ寄せて収める。
+	reserveChipSize = 18
+	reserveChipGap  = 6
 )
 
 // draw は対戦画面を描く。状態は変えない。
@@ -126,13 +134,8 @@ func (s *battleScene) drawInfo(screen *ebiten.Image, side battle.Side) {
 //
 // 代表Emojiを小さく出し、倒れていれば枠の色で示す。
 func (s *battleScene) drawReserves(screen *ebiten.Image, side battle.Side, panel image.Rectangle, active int) {
-	const (
-		dotSize = 18
-		dotGap  = 6
-	)
-
-	x := panel.Max.X - hpBarInset - dotSize
-	y := panel.Max.Y - hpBarInset - dotSize
+	x := panel.Max.X - hpBarInset - reserveChipSize
+	y := panel.Max.Y - hpBarInset - reserveChipSize
 	for index := battle.TeamSize - 1; index >= 0; index-- {
 		if index == active {
 			continue
@@ -142,15 +145,15 @@ func (s *battleScene) drawReserves(screen *ebiten.Image, side battle.Side, panel
 			continue
 		}
 
-		box := image.Rect(x, y, x+dotSize, y+dotSize)
+		box := image.Rect(x, y, x+reserveChipSize, y+reserveChipSize)
 		fill := buttonFillColor
 		if s.shown.fainted[side][index] {
 			fill = buttonDisabledColor
 		}
 		drawPanel(screen, box, fill, panelBorderColor)
-		drawText(screen, s.face, shortLabel(pokemon.Species), box.Min.X+1, box.Min.Y+1)
+		drawTextInBox(screen, s.face, shortLabel(pokemon.Species), box)
 
-		x -= dotSize + dotGap
+		x -= reserveChipSize + reserveChipGap
 	}
 }
 
@@ -173,8 +176,9 @@ func (s *battleScene) drawCommands(screen *ebiten.Image) {
 		drawCenteredText(screen, s.face, b.label, float64(rect.Min.X+rect.Dx()/2), rect.Min.Y+(rect.Dy()-uifont.Size)/2)
 
 		if b.disabled {
-			// 組み込みフォントは色を選べないので、文字の上から半透明をかけて
-			// まとめて沈ませる。枠の色だけでは押せないことが分かりにくかった。
+			// 文字の上から半透明をかけて枠ごと沈ませる。枠の色だけでは
+			// 押せないことが分かりにくかった。文字色だけを変えるより、
+			// 枠と文字がまとめて暗くなるほうが押せないと伝わる。
 			dimPanel(screen, rect)
 		}
 	}

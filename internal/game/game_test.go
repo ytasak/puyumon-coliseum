@@ -1,9 +1,7 @@
 package game
 
 import (
-	"strings"
 	"testing"
-	"unicode"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -97,59 +95,4 @@ func TestDrawDoesNotPanicInEveryPhase(t *testing.T) {
 
 	playToFinish(t, scene)
 	g.Draw(screen) // 決着
-}
-
-func TestOverlayTextIdentifiesTheBuild(t *testing.T) {
-	t.Parallel()
-
-	got := newGame(t).overlayText()
-
-	for _, want := range []string{"PUYUMON", "640x360", "ticks: 0"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("overlayText() = %q, want it to contain %q", got, want)
-		}
-	}
-}
-
-// 動作確認用テキストは相手の枠と重ならず、画面に収まる。
-func TestOverlayTextFitsBesideTheOpponentPanel(t *testing.T) {
-	t.Parallel()
-
-	text := newGame(t).overlayText()
-	width := len(text) * debugFontCharWidth
-
-	if overlayTextOriginX+width > LogicalWidth {
-		t.Errorf("%q が画面からはみ出す（右端 %d px）", text, overlayTextOriginX+width)
-	}
-	if overlayTextOriginX < infoPanels[foe].Max.X {
-		t.Errorf("動作確認用テキストが相手の枠へかぶる（x %d < %d）", overlayTextOriginX, infoPanels[foe].Max.X)
-	}
-}
-
-func TestOverlayTextReflectsTicks(t *testing.T) {
-	t.Parallel()
-
-	g := newGame(t)
-	for i := 0; i < 3; i++ {
-		if err := g.Update(); err != nil {
-			t.Fatalf("Update() returned error: %v", err)
-		}
-	}
-
-	if got, want := g.overlayText(), "ticks: 3"; !strings.Contains(got, want) {
-		t.Errorf("overlayText() = %q, want it to contain %q", got, want)
-	}
-}
-
-// ebitenutil.DebugPrintは組み込みのASCIIフォントで描画するため、
-// 識別用テキストに非ASCII文字が混ざると表示できない。
-// フォント同梱とEmoji描画はYTA-7で扱う。
-func TestOverlayTextIsASCIIOnly(t *testing.T) {
-	t.Parallel()
-
-	for _, r := range newGame(t).overlayText() {
-		if r > unicode.MaxASCII {
-			t.Errorf("overlayText() contains non-ASCII rune %q", r)
-		}
-	}
 }

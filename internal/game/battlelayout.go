@@ -3,9 +3,7 @@ package game
 import (
 	"fmt"
 	"image"
-	"strings"
 
-	"github.com/ytasak/puyumon-coliseum/internal/battle"
 	"github.com/ytasak/puyumon-coliseum/internal/battleui"
 	"github.com/ytasak/puyumon-coliseum/internal/roster"
 	"github.com/ytasak/puyumon-coliseum/internal/sprite"
@@ -118,7 +116,7 @@ func (s *battleScene) buttons() []button {
 		if !commands.NewMatch {
 			return nil
 		}
-		return []button{{cell: 0, label: "NEW MATCH", command: command{kind: commandNewMatch}}}
+		return []button{{cell: 0, label: "もう一度", command: command{kind: commandNewMatch}}}
 
 	default:
 		// 相手待ち。押せるものは無い。
@@ -132,7 +130,7 @@ func leadButtons(options []battleui.TeamOption) []button {
 	for i, option := range options {
 		buttons = append(buttons, button{
 			cell:    i,
-			label:   speciesLabel(option.Species),
+			label:   speciesName(option.Species),
 			command: command{kind: commandLead, index: option.Index},
 		})
 	}
@@ -141,10 +139,10 @@ func leadButtons(options []battleui.TeamOption) []button {
 
 // rootButtons はFightとSwitchを並べる。
 func rootButtons(commands battleui.Commands) []button {
-	buttons := []button{{cell: 0, label: "FIGHT", action: actionOpenFight}}
+	buttons := []button{{cell: 0, label: "たたかう", action: actionOpenFight}}
 	buttons = append(buttons, button{
 		cell:     1,
-		label:    "SWITCH",
+		label:    "こうたい",
 		disabled: len(commands.Switches) == 0,
 		action:   actionOpenSwitch,
 	})
@@ -165,7 +163,7 @@ func fightButtons(commands battleui.Commands) []button {
 	if commands.Struggle {
 		buttons = append(buttons, button{
 			cell:    commandCells - 2,
-			label:   "STRUGGLE",
+			label:   "わるあがき",
 			command: command{kind: commandStruggle},
 		})
 	}
@@ -178,7 +176,7 @@ func switchButtons(options []battleui.TeamOption) []button {
 	for i, option := range options {
 		buttons = append(buttons, button{
 			cell:    i,
-			label:   speciesLabel(option.Species),
+			label:   speciesName(option.Species),
 			command: command{kind: commandSwitch, index: option.Index},
 		})
 	}
@@ -187,7 +185,7 @@ func switchButtons(options []battleui.TeamOption) []button {
 
 // backButton は1つ上の階層へ戻るボタン。いつも右下に置く。
 func backButton() button {
-	return button{cell: commandCells - 1, label: "BACK", action: actionBack}
+	return button{cell: commandCells - 1, label: "もどる", action: actionBack}
 }
 
 // visibleButtons は画面に出すボタンを返す。
@@ -235,24 +233,22 @@ func (s *battleScene) tap(p image.Point) (bool, error) {
 	return false, nil
 }
 
-// speciesLabel は一覧に出す名前。表示名が未確定なのでinternal IDを大文字で使う。
-func speciesLabel(species battle.SpeciesID) string {
-	return strings.ToUpper(string(species))
-}
-
 // moveLabel は技のボタンに出す文字列。
 //
 // 技名・タイプ・残りPPを1行に収める。タイプは定義から引くだけで、
 // 相性の判断はしない。
+//
+// 幅はcellWidth 192pxしかない。全角4文字の技名とタイプ、半角5桁のPPで
+// ほぼ使い切るので、表示名を長くすると枠からはみ出す（jptext.goを参照）。
 func moveLabel(move battleui.MoveView) string {
 	if move.Move == "" {
 		return "-"
 	}
 
-	name := strings.ToUpper(string(move.Move))
+	name := moveName(move.Move)
 	label := fmt.Sprintf("%s %d/%d", name, move.PP, move.MaxPP)
 	if definition, err := roster.Data().LookupMove(move.Move); err == nil {
-		label = fmt.Sprintf("%s %s %d/%d", name, strings.ToUpper(definition.Type.String()), move.PP, move.MaxPP)
+		label = fmt.Sprintf("%s %s %d/%d", name, typeName(definition.Type), move.PP, move.MaxPP)
 	}
 	return label
 }
@@ -272,11 +268,6 @@ var (
 )
 
 const (
-	// debugFontCharWidth, debugFontCharHeight は ebitenutil.DebugPrintAt が使う
-	// 組み込みフォントの1文字分の大きさ。中央揃えと折り返しの判断に使う。
-	debugFontCharWidth  = 6
-	debugFontCharHeight = 16
-
 	// particleSize はEmoji particleの大きさ。
 	particleSize = 28
 )

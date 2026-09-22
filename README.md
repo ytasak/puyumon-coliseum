@@ -40,12 +40,11 @@ make run          # go run ./cmd/game と同じ
 - 上段左 / 中段右: 相手と自分の枠。名前と Level、HP バーと数値、状態、控え 2 体の簡易状態
 - 盤面: 両者の場に出ている 1 体。Composite Emoji で描き、技や被弾に合わせて動く
 - メッセージ行: 直前に起きたことを 1 行で出す
-- 下部: 選択肢。最初は出す 1 体、対戦中は `FIGHT` / `SWITCH`、技は 4 つと残り PP
-- 右上: 論理解像度・`fps`・tick
+- 下部: 選択肢。最初は出す 1 体、対戦中は「たたかう」/「こうたい」、技は 4 つと残り PP
 
 まず出す 1 体を選ぶと対戦が始まる。相手の手番は Bot が決める。
 演出を再生しているあいだは選択肢を出さず、入力も受け付けない。
-決着すると結果が出て、`NEW MATCH` で次の対戦を始められる。
+決着すると結果が出て、「もう一度」で次の対戦を始められる。
 
 ウィンドウを閉じるとアプリケーションが終了する。
 
@@ -62,10 +61,11 @@ WASM 用のコード分岐や build tag は無い。
 Desktop 版と同じ内容が表示され、Emoji の見た目が Desktop と一致していれば WASM 側も成立している。
 
 iframe へ埋め込んだ状態を確認する場合は <http://localhost:8080/iframe.html> を開く。
-枠内の tick カウンタが増え続けていれば iframe 内でも Update / Draw が継続している。
+1 体を選んで対戦が進み、演出が流れて次の選択肢が出れば iframe 内でも Update / Draw が継続している。
 
-`main.wasm` は約 21 MB ある。`make serve` は圧縮しないので初回ロードには時間がかかる。
-本番配信では事前圧縮して配るため、実際の転送量は brotli で約 3.8 MB になる。
+`main.wasm` は約 23 MB ある（日本語 UI フォントを同梱したぶんを含む）。
+`make serve` は圧縮しないので初回ロードには時間がかかる。本番配信では事前圧縮して配る。
+brotli の実測は 21.4 MB 時点の 3.8 MB で、**フォント同梱後は測り直していない**。
 配信手順は [docs/wasm-delivery.md](docs/wasm-delivery.md)、サイズの内訳は
 [docs/emoji-rendering.md](docs/emoji-rendering.md) を参照。
 
@@ -138,6 +138,7 @@ internal/game/battlescene.go 対戦画面の状態。入力の受け口と演出
 internal/game/battlelayout.go 画面の区切りとボタンの位置、当たり判定
 internal/game/battledraw.go  対戦画面の描画
 internal/game/battlemessage.go 対戦の経過を出す文字列
+internal/game/jptext.go     画面に出す日本語の表示名と、文字の描画ヘルパー
 internal/game/characters.go 6 体の見た目（暫定）
 internal/game/input.go      マウス / タッチの取得
 internal/sprite/            複数 Emoji を 1 体として定義・描画する Composite Sprite 層
@@ -153,7 +154,9 @@ docs/mobile-safari-poc.md   iPhone Safari / iframe 検証の手順と記録（YT
 docs/wasm-delivery.md       本番配信時の圧縮手順と実測サイズ（YTA-12）
 docs/loading-experience.md  初回ロード中の表示と、回線別のロード時間（YTA-13）
 internal/emoji/             Emoji 素材のフォント読み込みとセル画像のキャッシュ
-internal/emoji/assets/      同梱フォントと、その出典・ライセンス
+internal/emoji/assets/      同梱 Emoji フォントと、その出典・ライセンス
+internal/uifont/            画面テキスト用の日本語フォントの読み込みと glyph の有無判定
+internal/uifont/assets/     同梱 UI フォントと、その出典・ライセンス
 docs/emoji-rendering.md     カラー Emoji 描画の検証記録（YTA-7）
 web/index.html              Go WASM runtime と main.wasm をロードする bootstrap
 web/iframe.html             iframe 埋め込み確認用ページ
@@ -229,7 +232,10 @@ Linear に明示されていない箇所について、以下を採用した。�
 | 論理解像度 | 640x360 (16:9) 固定 | **横持ち前提の確定値**（YTA-11）。初代準拠の対面レイアウト（両者のアクティブ・控え・HP・技 4 つ・メッセージ）を 1 画面へ収めるため横長を採る。`internal/game/layout.go` の定数一箇所で管理し、実ウィンドウサイズとは分離する |
 | 縦持ちで開かれたとき | ゲーム画面の代わりに横持ちを促す画面を出す | iOS Safari はページから画面の向きをロックできず、促すことしかできない。縦長のまま出すと 16:9 が高さの 3 分の 1 ほどしか使えない。`Update` は止めないので、横にすればそのまま続きが見える |
 | 初期ウィンドウ | 論理解像度の 2 倍 (1280x720) | Desktop で確認しやすいサイズ。論理解像度には影響しない |
-| 画面テキスト | `ebitenutil.DebugPrintAt`（組み込み ASCII フォント） | 追加フォントを持ち込まない。対戦の文言・ボタン・確認用テキストはすべて ASCII で組み、キャラクターは internal ID を大文字にして指す。日本語の UI フォントと表示名は別 Issue の範囲 |
+| 画面テキスト | 日本語フォントを同梱し、Emoji と同じ `text/v2` で描く | 対象は日本人ユーザー。組み込みの ASCII フォントでは日本語を描けず、システムフォントや CDN に頼ると Desktop とブラウザで字形が変わる。選定理由・ライセンス・サイズ影響は [internal/uifont/assets/README.md](internal/uifont/assets/README.md) |
+| 文字幅の扱い | 等幅を仮定せず `text.Measure` で実測する | 日本語は全角と半角が混ざり、文字数ともバイト数とも表示幅が一致しない。中央揃えと枠に収まるかの判断はすべて実測値で行い、表示しうる文字列の幅を test で固定している |
+| キャラクター名・技名 | 表示層だけの対応表で日本語にする（`internal/game/jptext.go`） | **仮の表示名で、最終的な命名ではない。** `SpeciesID` / `MoveID`、固定 roster、Battle Rule は変えない。正式名が決まったら対応表だけを差し替える |
+| デバッグ overlay | プレイヤー画面には出さない | `fps` / tick は日本語化すべき対戦情報ではなく、playtest では画面上部を占有して邪魔になる。これに伴い `ebitenutil` を使わなくなり、WASM が実測 2.2 MB 小さくなった |
 | Emoji フォント | Twemoji Mozilla 0.7.0（COLRv0）を同梱 | Ebitengine v2.10 は COLRv0 を描画できるが **COLRv1 は非対応**。候補中もっとも小さく（1.4 MB）、ベクターで拡大に強く、送り幅が正方 1em で共通の描画単位を定義しやすい。比較の実測値は [docs/emoji-rendering.md](docs/emoji-rendering.md) |
 | Emoji の描画単位 | 128px 四方のセル画像 1 枚 = Emoji 1 文字。アンカーは em box の中心 | 表示サイズをセルの拡大縮小だけで決め、Emoji ごとの位置補正を不要にする。セルをキャッシュするので毎フレームのグリフ生成も起きない |
 | Emoji のフォールバック | OS のフォントにフォールバックしない | Desktop とブラウザで同じ絵を出すため、同梱フォントだけで描画結果を固定する |
@@ -251,7 +257,7 @@ Linear に明示されていない箇所について、以下を採用した。�
 | `wasm_exec.js` | `make wasm` が GOROOT からコピーし、commit しない | Go の同梱物なのでツールチェーンとバージョンを一致させる。生成物を commit しない方針とも揃う |
 | ローカル配信サーバ | 標準ライブラリだけの Go 実装（`cmd/serve`） | `.wasm` の Content-Type が `application/wasm` でないと `instantiateStreaming` が失敗する。Go の `mime` なら確実で、外部ツールへの依存も増えない |
 | 配信時のキャッシュ | `Cache-Control: no-store` | 再ビルドした `.wasm` が古いキャッシュのまま検証される事故を防ぐ |
-| 本番配信の圧縮 | `make dist` で事前圧縮した `.br` / `.gz` を生成し、配信側は `Content-Encoding` を付けて返す | brotli -q11 で 21.4 MB → 3.8 MB。21 MB の `.wasm` は CDN の自動圧縮のサイズ上限を超えやすく、事前圧縮のほうが確実。圧縮は配信の設定なのでゲーム側のコードは変えない |
+| 本番配信の圧縮 | `make dist` で事前圧縮した `.br` / `.gz` を生成し、配信側は `Content-Encoding` を付けて返す | brotli -q11 で 21.4 MB → 3.8 MB（YTA-12 時点の実測。日本語フォント同梱後は測り直していない）。20 MB を超える `.wasm` は CDN の自動圧縮のサイズ上限を超えやすく、事前圧縮のほうが確実。圧縮は配信の設定なのでゲーム側のコードは変えない |
 | `-ldflags="-s -w"` | 使わない | 圧縮後で 0.06 MB しか減らない一方、panic 時のシンボルを失う |
 | Battle Engine の位置 | `internal/battle`。Ebitengine を import しない | 仕様書が求める UI 非依存の pure domain。import していないことを test で検査しており、うっかり依存が入れば落ちる |
 | チームの表現 | `[3]Pokemon` の固定長配列 + 場に出ている index | 本作は 3 体固定なので型で表せる。交代しても index が変わらないため、Event から常に同じ index で指せる |
@@ -332,8 +338,10 @@ Linear に明示されていない箇所について、以下を採用した。�
 ### 同梱アセット
 
 - `internal/emoji/assets/TwemojiMozilla.ttf` — Twemoji Mozilla 0.7.0（カラー Emoji フォント）
+- `internal/uifont/assets/DotGothic16-Regular.ttf` — DotGothic16（日本語 UI フォント、SIL OFL 1.1）
 
-出典・SHA-256・ライセンス全文は `internal/emoji/assets/` に置いている。
+出典・SHA-256・ライセンス全文は、それぞれ `internal/emoji/assets/` と
+`internal/uifont/assets/` に置いている。
 
 ## テストについて
 

@@ -3,6 +3,8 @@ package game
 import (
 	"fmt"
 
+	text "github.com/hajimehoshi/ebiten/v2/text/v2"
+
 	"github.com/ytasak/puyumon-coliseum/internal/anim"
 	"github.com/ytasak/puyumon-coliseum/internal/battle"
 	"github.com/ytasak/puyumon-coliseum/internal/battleui"
@@ -86,6 +88,9 @@ type battleScene struct {
 	session *singleplayer.Session
 	bot     *bot.Bot
 
+	// face は画面テキストを描く同梱フォント。Gameと同じものを使い回す。
+	face *text.GoTextFace
+
 	// view は直近のSnapshot。cueを消化しているあいだは更新しない。
 	view battleui.View
 
@@ -113,7 +118,7 @@ type battleScene struct {
 }
 
 // newBattleScene はseedから1試合分の状態を作る。
-func newBattleScene(seed uint64) (*battleScene, error) {
+func newBattleScene(seed uint64, face *text.GoTextFace) (*battleScene, error) {
 	session, err := singleplayer.NewSession(singleplayer.Config{Seed: seed})
 	if err != nil {
 		return nil, fmt.Errorf("game: %w", err)
@@ -123,6 +128,7 @@ func newBattleScene(seed uint64) (*battleScene, error) {
 		seed:    seed,
 		session: session,
 		bot:     bot.New(roster.Data(), session.BotSeed()),
+		face:    face,
 	}
 	scene.refresh()
 	return scene, nil
@@ -379,7 +385,7 @@ func (s *battleScene) startNewMatch(c command) (bool, error) {
 		return false, nil
 	}
 
-	next, err := newBattleScene(nextSeed(s.seed))
+	next, err := newBattleScene(nextSeed(s.seed), s.face)
 	if err != nil {
 		return false, err
 	}

@@ -3,11 +3,11 @@ package game
 import (
 	"image"
 	"testing"
-	"unicode"
 
 	"github.com/ytasak/puyumon-coliseum/internal/battle"
 	"github.com/ytasak/puyumon-coliseum/internal/battleui"
 	"github.com/ytasak/puyumon-coliseum/internal/singleplayer"
+	"github.com/ytasak/puyumon-coliseum/internal/uifont"
 )
 
 // ボタンは画面に収まり、重ならない。
@@ -71,9 +71,9 @@ func TestFightMenuOpensAndCloses(t *testing.T) {
 
 	scene := startedScene(t, 1)
 
-	fight, ok := buttonWithLabel(scene, "FIGHT")
+	fight, ok := buttonWithLabel(scene, "たたかう")
 	if !ok {
-		t.Fatal("FIGHTが出ていない")
+		t.Fatal("たたかうが出ていない")
 	}
 	tapOrFatal(t, scene, center(fight.rect()))
 	if scene.menu != menuFight {
@@ -91,9 +91,9 @@ func TestFightMenuOpensAndCloses(t *testing.T) {
 		t.Errorf("技が %d 個（4個のはず）", moves)
 	}
 
-	back, ok := buttonWithLabel(scene, "BACK")
+	back, ok := buttonWithLabel(scene, "もどる")
 	if !ok {
-		t.Fatal("BACKが出ていない")
+		t.Fatal("もどるが出ていない")
 	}
 	tapOrFatal(t, scene, center(back.rect()))
 	if scene.menu != menuRoot {
@@ -234,24 +234,26 @@ func TestReplacementHasNoBackButton(t *testing.T) {
 	}
 }
 
-// ラベルは組み込みフォントで描けるASCIIだけで作る。
-func TestButtonLabelsAreASCIIOnly(t *testing.T) {
+// ラベルは同梱フォントで描けて、枠へ収まる。
+//
+// **幅は文字数ではなく実測で見る。** 日本語は全角と半角が混ざるので、
+// 文字数もバイト数も表示幅と一致しない。
+func TestButtonLabelsAreDrawableAndFit(t *testing.T) {
 	t.Parallel()
 
 	scene := newSceneOrFatal(t, 1)
+	face := testFace(t)
 	labels := collectLabels(t, scene)
 	if len(labels) == 0 {
 		t.Fatal("ラベルを1つも集められなかった")
 	}
 
 	for _, label := range labels {
-		for _, r := range label {
-			if r > unicode.MaxASCII {
-				t.Errorf("%q にASCII外の文字 %q が含まれる", label, r)
-			}
+		if missing := uifont.MissingGlyphs(face, label); len(missing) > 0 {
+			t.Errorf("%q は同梱フォントに字形が無い文字を含む: %q", label, missing)
 		}
-		if width := len(label) * debugFontCharWidth; width > cellWidth {
-			t.Errorf("%q が枠に収まらない（%d px > %d px）", label, width, cellWidth)
+		if width := textWidth(face, label); width > float64(cellWidth) {
+			t.Errorf("%q が枠に収まらない（%.0f px > %d px）", label, width, cellWidth)
 		}
 	}
 }
@@ -260,9 +262,9 @@ func TestButtonLabelsAreASCIIOnly(t *testing.T) {
 func openFight(t *testing.T, s *battleScene) {
 	t.Helper()
 
-	fight, ok := buttonWithLabel(s, "FIGHT")
+	fight, ok := buttonWithLabel(s, "たたかう")
 	if !ok {
-		t.Fatal("FIGHTが出ていない")
+		t.Fatal("たたかうが出ていない")
 	}
 	tapOrFatal(t, s, center(fight.rect()))
 }

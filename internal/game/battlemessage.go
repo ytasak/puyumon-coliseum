@@ -2,18 +2,15 @@ package game
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/ytasak/puyumon-coliseum/internal/battle"
 	"github.com/ytasak/puyumon-coliseum/internal/battleui"
-	"github.com/ytasak/puyumon-coliseum/internal/singleplayer"
 )
 
-// 対戦の経過を出す文字列はASCIIだけで作る。
+// 対戦の経過を出す文字列を日本語で組む。
 //
-// 画面に描けるのは組み込みのASCIIフォントとEmojiだけで、日本語のフォントは
-// 持っていない（README「技術的な判断」）。表示名も未確定なので、
-// キャラクターはinternal IDを大文字にして指す。
+// 説明されなくても分かる短い文にする。1行に収まる長さで、専門用語や
+// 内部IDをそのまま出さない。表示名は jptext.go の対応表から引く。
 //
 // 文面はcueとviewから作る。**どの技が効いたか、なぜ効かなかったかを
 // ここで判定し直さない。** それはBattle Engineが決めてcueに載せている。
@@ -22,60 +19,60 @@ import (
 func cueMessage(cue battleui.Cue, viewer battle.Side) string {
 	switch c := cue.(type) {
 	case battleui.MoveUsedCue:
-		return fmt.Sprintf("%s USED %s", refLabel(c.Actor, viewer), strings.ToUpper(string(c.Move)))
+		return fmt.Sprintf("%sの%s！", refLabel(c.Actor, viewer), moveName(c.Move))
 
 	case battleui.DamageCue:
-		message := fmt.Sprintf("%s TOOK %d", refLabel(c.Target, viewer), c.Amount)
+		message := fmt.Sprintf("%sに%dのダメージ", refLabel(c.Target, viewer), c.Amount)
 		if c.Critical {
-			message += " CRITICAL HIT"
+			message += " 急所に当たった"
 		}
 		return message
 
 	case battleui.HealCue:
-		return fmt.Sprintf("%s RECOVERED %d", refLabel(c.Target, viewer), c.Amount)
+		return fmt.Sprintf("%sは%d回復した", refLabel(c.Target, viewer), c.Amount)
 
 	case battleui.StatusCue:
 		if c.Applied {
-			return fmt.Sprintf("%s IS %s", refLabel(c.Target, viewer), statusWord(c.Status))
+			return fmt.Sprintf("%sは%sになった", refLabel(c.Target, viewer), majorStatusName(c.Status))
 		}
-		return fmt.Sprintf("%s SHOOK OFF %s", refLabel(c.Target, viewer), statusWord(c.Status))
+		return fmt.Sprintf("%sの%sが治った", refLabel(c.Target, viewer), majorStatusName(c.Status))
 
 	case battleui.StatStageCue:
-		direction := "FELL"
+		direction := "下がった"
 		if c.Delta > 0 {
-			direction = "ROSE"
+			direction = "上がった"
 		}
-		return fmt.Sprintf("%s %s %s", refLabel(c.Target, viewer), strings.ToUpper(c.Stat.String()), direction)
+		return fmt.Sprintf("%sの%sが%s", refLabel(c.Target, viewer), statName(c.Stat), direction)
 
 	case battleui.MultiHitCue:
-		return fmt.Sprintf("HIT %d TIMES", c.Hits)
+		return fmt.Sprintf("%d回当たった", c.Hits)
 
 	case battleui.MissCue:
-		return fmt.Sprintf("%s MISSED", refLabel(c.Actor, viewer))
+		return fmt.Sprintf("%sの攻撃は外れた", refLabel(c.Actor, viewer))
 
 	case battleui.UnaffectedCue:
-		return fmt.Sprintf("NO EFFECT ON %s", refLabel(c.Target, viewer))
+		return fmt.Sprintf("%sには効果がないようだ", refLabel(c.Target, viewer))
 
 	case battleui.FailedCue:
-		return "BUT IT FAILED"
+		return "うまく決まらなかった"
 
 	case battleui.BlockedCue:
-		return fmt.Sprintf("%s %s", refLabel(c.Target, viewer), blockedWord(c.Reason))
+		return fmt.Sprintf("%sは%s", refLabel(c.Target, viewer), blockedWord(c.Reason))
 
 	case battleui.SwitchOutCue:
 		if c.Target.Side == viewer {
-			return fmt.Sprintf("COME BACK %s", refLabel(c.Target, viewer))
+			return fmt.Sprintf("戻れ！ %s", speciesName(c.Target.Species))
 		}
-		return fmt.Sprintf("%s WITHDREW", refLabel(c.Target, viewer))
+		return fmt.Sprintf("%sは引っ込んだ", refLabel(c.Target, viewer))
 
 	case battleui.SwitchInCue:
 		if c.Target.Side == viewer {
-			return fmt.Sprintf("GO %s", refLabel(c.Target, viewer))
+			return fmt.Sprintf("行け！ %s", speciesName(c.Target.Species))
 		}
-		return fmt.Sprintf("%s CAME OUT", refLabel(c.Target, viewer))
+		return fmt.Sprintf("%sが出てきた", refLabel(c.Target, viewer))
 
 	case battleui.FaintCue:
-		return fmt.Sprintf("%s FAINTED", refLabel(c.Target, viewer))
+		return fmt.Sprintf("%sは倒れた", refLabel(c.Target, viewer))
 
 	default:
 		return ""
@@ -90,13 +87,13 @@ func promptMessage(view battleui.View) string {
 
 	switch view.Commands.Kind {
 	case battleui.CommandChooseLead:
-		return "CHOOSE WHO GOES FIRST"
+		return "最初に出す1体を選んでください"
 	case battleui.CommandChooseAction:
-		return "WHAT WILL YOU DO"
+		return "どうしますか？"
 	case battleui.CommandChooseReplacement:
-		return "SEND OUT THE NEXT ONE"
+		return "次に出す1体を選んでください"
 	case battleui.CommandWaiting:
-		return "WAITING FOR THE OPPONENT"
+		return "相手の行動を待っています"
 	default:
 		return ""
 	}
@@ -108,63 +105,48 @@ func resultMessage(result battleui.Result, viewer battle.Side) string {
 	case !result.Decided:
 		return ""
 	case result.Draw:
-		return "DRAW"
+		return "引き分け"
 	case result.Winner == viewer:
-		return "YOU WIN"
+		return "あなたの勝ち！"
 	default:
-		return "YOU LOSE"
+		return "あなたの負け"
 	}
 }
 
-// refLabel は誰のことかを短く指す。相手側にはFOEを付ける。
+// refLabel は誰のことかを短く指す。相手側には「相手の」を付ける。
 func refLabel(ref battleui.Ref, viewer battle.Side) string {
-	name := speciesLabel(ref.Species)
-	if name == "" {
-		name = "?"
-	}
+	name := speciesName(ref.Species)
 	if ref.Side == viewer {
 		return name
 	}
-	return "FOE " + name
+	return "相手の" + name
 }
 
-// statusWord は状態異常の言い方を返す。
-func statusWord(status battle.MajorStatus) string {
-	switch status {
-	case battle.Burn:
-		return "BURNED"
-	case battle.Freeze:
-		return "FROZEN"
-	case battle.Paralysis:
-		return "PARALYZED"
-	case battle.Poison:
-		return "POISONED"
-	case battle.Sleep:
-		return "ASLEEP"
-	default:
-		return strings.ToUpper(status.String())
+// majorStatusName は状態異常の言い方を返す。
+//
+// 情報枠の表記と同じ語を使う。同じ状態を枠と文章で別の言葉にすると、
+// どちらを見ているかで呼び名が変わってしまう。
+func majorStatusName(status battle.MajorStatus) string {
+	if name := statusName(statusViewOf(status)); name != "" {
+		return name
 	}
+	return unknownName
 }
 
 // blockedWord は動けなかった理由の言い方を返す。
 func blockedWord(reason battleui.BlockReason) string {
 	switch reason {
 	case battleui.BlockSleep:
-		return "IS FAST ASLEEP"
+		return "ぐっすり眠っている"
 	case battleui.BlockWakeUp:
-		return "WOKE UP"
+		return "目を覚ました"
 	case battleui.BlockFreeze:
-		return "IS FROZEN SOLID"
+		return "凍って動けない"
 	case battleui.BlockParalysis:
-		return "CANNOT MOVE"
+		return "しびれて動けない"
 	case battleui.BlockRecharge:
-		return "MUST RECHARGE"
+		return "反動で動けない"
 	default:
-		return "CANNOT MOVE"
+		return "動けない"
 	}
-}
-
-// phaseLabel は画面の隅に出す進行段階。
-func phaseLabel(phase singleplayer.Phase) string {
-	return strings.ToUpper(strings.ReplaceAll(phase.String(), " ", "-"))
 }

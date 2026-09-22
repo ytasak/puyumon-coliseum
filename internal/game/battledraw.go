@@ -6,12 +6,12 @@ import (
 	"image/color"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
 	"github.com/ytasak/puyumon-coliseum/internal/battle"
 	"github.com/ytasak/puyumon-coliseum/internal/battleui"
 	"github.com/ytasak/puyumon-coliseum/internal/sprite"
+	"github.com/ytasak/puyumon-coliseum/internal/uifont"
 )
 
 // 画面の色。背景と紛れず、押せるものと押せないものが見分けられる組み合わせにする。
@@ -40,6 +40,14 @@ const (
 	// hpMidPercent, hpLowPercent は色が変わる残量。
 	hpMidPercent = 50
 	hpLowPercent = 20
+
+	// reserveChipSize, reserveChipGap は控えを並べる小さな枠の大きさと間隔。
+	//
+	// 枠には略記を全角1文字だけ入れる。**行の高さ（ascent + descent）は
+	// この枠より大きい**ので、左上を指定して描くと下へはみ出す。
+	// drawTextInBox でインクを枠の中央へ寄せて収める。
+	reserveChipSize = 18
+	reserveChipGap  = 6
 )
 
 // draw は対戦画面を描く。状態は変えない。
@@ -98,7 +106,7 @@ func (s *battleScene) drawInfo(screen *ebiten.Image, side battle.Side) {
 	index := s.shown.active[side]
 	if !inTeam(index) {
 		// lead選択中。まだ出ていないので控えだけを並べる。
-		ebitenutil.DebugPrintAt(screen, "READY", panel.Min.X+hpBarInset, panel.Min.Y+6)
+		drawText(screen, s.face, "準備中", panel.Min.X+hpBarInset, panel.Min.Y+6)
 		s.drawReserves(screen, side, panel, -1)
 		return
 	}
@@ -108,16 +116,16 @@ func (s *battleScene) drawInfo(screen *ebiten.Image, side battle.Side) {
 		return
 	}
 
-	header := fmt.Sprintf("%s LV%d", speciesLabel(pokemon.Species), pokemon.Level)
-	if tag := statusTag(s.statusOf(side, index)); tag != "" {
+	header := fmt.Sprintf("%s Lv%d", speciesName(pokemon.Species), pokemon.Level)
+	if tag := statusName(s.statusOf(side, index)); tag != "" {
 		header += " " + tag
 	}
-	ebitenutil.DebugPrintAt(screen, header, panel.Min.X+hpBarInset, panel.Min.Y+6)
+	drawText(screen, s.face, header, panel.Min.X+hpBarInset, panel.Min.Y+6)
 
 	hp := s.shown.hp[side][index]
-	barTop := panel.Min.Y + 6 + debugFontCharHeight + 4
+	barTop := panel.Min.Y + 6 + uifont.Size + 4
 	drawHPBar(screen, image.Rect(panel.Min.X+hpBarInset, barTop, panel.Max.X-hpBarInset, barTop+hpBarHeight), hp, pokemon.MaxHP)
-	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("%d/%d", hp, pokemon.MaxHP), panel.Min.X+hpBarInset, barTop+hpBarHeight+2)
+	drawText(screen, s.face, fmt.Sprintf("%d/%d", hp, pokemon.MaxHP), panel.Min.X+hpBarInset, barTop+hpBarHeight+2)
 
 	s.drawReserves(screen, side, panel, index)
 }
@@ -126,13 +134,8 @@ func (s *battleScene) drawInfo(screen *ebiten.Image, side battle.Side) {
 //
 // 代表Emojiを小さく出し、倒れていれば枠の色で示す。
 func (s *battleScene) drawReserves(screen *ebiten.Image, side battle.Side, panel image.Rectangle, active int) {
-	const (
-		dotSize = 18
-		dotGap  = 6
-	)
-
-	x := panel.Max.X - hpBarInset - dotSize
-	y := panel.Max.Y - hpBarInset - dotSize
+	x := panel.Max.X - hpBarInset - reserveChipSize
+	y := panel.Max.Y - hpBarInset - reserveChipSize
 	for index := battle.TeamSize - 1; index >= 0; index-- {
 		if index == active {
 			continue
@@ -142,15 +145,15 @@ func (s *battleScene) drawReserves(screen *ebiten.Image, side battle.Side, panel
 			continue
 		}
 
-		box := image.Rect(x, y, x+dotSize, y+dotSize)
+		box := image.Rect(x, y, x+reserveChipSize, y+reserveChipSize)
 		fill := buttonFillColor
 		if s.shown.fainted[side][index] {
 			fill = buttonDisabledColor
 		}
 		drawPanel(screen, box, fill, panelBorderColor)
-		ebitenutil.DebugPrintAt(screen, shortLabel(pokemon.Species), box.Min.X+2, box.Min.Y+1)
+		drawTextInBox(screen, s.face, shortLabel(pokemon.Species), box)
 
-		x -= dotSize + dotGap
+		x -= reserveChipSize + reserveChipGap
 	}
 }
 
@@ -158,7 +161,7 @@ func (s *battleScene) drawReserves(screen *ebiten.Image, side battle.Side, panel
 func (s *battleScene) drawMessage(screen *ebiten.Image) {
 	box := image.Rect(commandMargin, messageTop, LogicalWidth-commandMargin, messageBottom)
 	drawPanel(screen, box, panelFillColor, panelBorderColor)
-	ebitenutil.DebugPrintAt(screen, s.message, box.Min.X+10, box.Min.Y+(box.Dy()-debugFontCharHeight)/2)
+	drawText(screen, s.face, s.message, box.Min.X+10, box.Min.Y+(box.Dy()-uifont.Size)/2)
 }
 
 // drawCommands は選択肢を描く。
@@ -170,11 +173,12 @@ func (s *battleScene) drawCommands(screen *ebiten.Image) {
 			fill = buttonDisabledColor
 		}
 		drawPanel(screen, rect, fill, buttonBorderColor)
-		drawCenteredLabel(screen, b.label, float64(rect.Min.X+rect.Dx()/2), rect.Min.Y+(rect.Dy()-debugFontCharHeight)/2)
+		drawCenteredText(screen, s.face, b.label, float64(rect.Min.X+rect.Dx()/2), rect.Min.Y+(rect.Dy()-uifont.Size)/2)
 
 		if b.disabled {
-			// 組み込みフォントは色を選べないので、文字の上から半透明をかけて
-			// まとめて沈ませる。枠の色だけでは押せないことが分かりにくかった。
+			// 文字の上から半透明をかけて枠ごと沈ませる。枠の色だけでは
+			// 押せないことが分かりにくかった。文字色だけを変えるより、
+			// 枠と文字がまとめて暗くなるほうが押せないと伝わる。
 			dimPanel(screen, rect)
 		}
 	}
@@ -229,33 +233,15 @@ func statusViewOf(status battle.MajorStatus) battleui.StatusView {
 	}
 }
 
-// statusTag は枠に出す短い状態表記を返す。状態が無ければ空。
-func statusTag(status battleui.StatusView) string {
-	switch status {
-	case battleui.StatusBurn:
-		return "BRN"
-	case battleui.StatusFreeze:
-		return "FRZ"
-	case battleui.StatusParalysis:
-		return "PAR"
-	case battleui.StatusPoison:
-		return "PSN"
-	case battleui.StatusSleep:
-		return "SLP"
-	case battleui.StatusFainted:
-		return "FNT"
-	default:
-		return ""
-	}
-}
-
-// shortLabel は控えの枠に収まる2文字の略記を返す。
+// shortLabel は控えの枠に収まる略記を返す。
+//
+// **rune単位で切る。** byteで切ると日本語が文字の途中で割れて豆腐になる。
+// 枠は18pxしかないので全角1文字だけ入る。
 func shortLabel(species battle.SpeciesID) string {
-	label := speciesLabel(species)
-	if len(label) > 2 {
-		return label[:2]
+	for _, r := range speciesName(species) {
+		return string(r)
 	}
-	return label
+	return ""
 }
 
 // drawPanel は枠を塗って縁を描く。
@@ -297,11 +283,6 @@ func drawHPBar(screen *ebiten.Image, rect image.Rectangle, hp, maxHP int) {
 	filled := w * float32(hp) / float32(maxHP)
 	vector.DrawFilledRect(screen, x, y, filled, h, fill, false)
 	vector.StrokeRect(screen, x, y, w, h, 1, panelBorderColor, false)
-}
-
-// drawCenteredLabel はASCIIラベルをcenterXの中央揃えで描く。
-func drawCenteredLabel(screen *ebiten.Image, label string, centerX float64, y int) {
-	ebitenutil.DebugPrintAt(screen, label, int(centerX)-len(label)*debugFontCharWidth/2, y)
 }
 
 // faintParticle は倒れたときに出すEmoji。

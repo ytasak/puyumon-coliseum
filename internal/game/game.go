@@ -12,10 +12,11 @@ import (
 	"image/color"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
+	text "github.com/hajimehoshi/ebiten/v2/text/v2"
 
 	"github.com/ytasak/puyumon-coliseum/internal/emoji"
 	"github.com/ytasak/puyumon-coliseum/internal/sprite"
+	"github.com/ytasak/puyumon-coliseum/internal/uifont"
 )
 
 // WindowTitle はDesktop起動時のウィンドウタイトル。
@@ -24,14 +25,6 @@ const WindowTitle = "ぷゆもんコロシアム 155 Battle"
 
 // backgroundColor は盤面の背景。
 var backgroundColor = color.RGBA{R: 0x1b, G: 0x24, B: 0x38, A: 0xff}
-
-// overlayTextOriginX, overlayTextOriginY は動作確認用テキストの描画開始位置（論理座標）。
-//
-// 相手の枠と重ならないよう、右上へ寄せる。
-const (
-	overlayTextOriginX = 332
-	overlayTextOriginY = 4
-)
 
 // Game は ebiten.Game の実装。
 //
@@ -45,6 +38,9 @@ type Game struct {
 	// sprites はCharacterを描画する。Emoji素材のセル画像を内部で使い回すため、
 	// Gameと同じ寿命で1つだけ持つ。
 	sprites *sprite.Renderer
+
+	// face は画面テキストを描く同梱フォント。解析は起動時の1度だけで済ませる。
+	face *text.GoTextFace
 
 	// touchIDs, tapped は入力の取得に使い回すbuffer。
 	// 毎tick確保しないために保持する。
@@ -78,11 +74,16 @@ func New(seed uint64) (*Game, error) {
 		return nil, fmt.Errorf("game: %w", err)
 	}
 
-	scene, err := newBattleScene(seed)
+	face, err := uifont.New()
+	if err != nil {
+		return nil, fmt.Errorf("game: %w", err)
+	}
+
+	scene, err := newBattleScene(seed, face)
 	if err != nil {
 		return nil, err
 	}
-	return &Game{seed: seed, sprites: sprite.NewRenderer(emojis), battle: scene}, nil
+	return &Game{seed: seed, sprites: sprite.NewRenderer(emojis), face: face, battle: scene}, nil
 }
 
 // Update はEbitengineのtickごとに呼ばれる。
@@ -122,15 +123,4 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 
 	g.battle.draw(screen, g.sprites)
-	ebitenutil.DebugPrintAt(screen, g.overlayText(), overlayTextOriginX, overlayTextOriginY)
-}
-
-// overlayText は動作確認用テキストを返す。
-//
-// ebitenutil.DebugPrintAt は組み込みのASCIIフォントで描画するため、
-// ここでは日本語やEmojiを含めない。画面のEmojiは同梱フォントで描いており、
-// この確認用テキストとは描画経路が別になっている。
-func (g *Game) overlayText() string {
-	return fmt.Sprintf("PUYUMON 155 %dx%d fps %.0f ticks: %d",
-		LogicalWidth, LogicalHeight, ebiten.ActualFPS(), g.ticks)
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/ytasak/puyumon-coliseum/internal/battle"
 	"github.com/ytasak/puyumon-coliseum/internal/battleui"
 	"github.com/ytasak/puyumon-coliseum/internal/singleplayer"
+	"github.com/ytasak/puyumon-coliseum/internal/uifont"
 )
 
 // maxSceneSteps は1試合を打ち切る操作回数。決着しないことを検出するための安全装置。
@@ -339,7 +340,11 @@ func TestSceneIsDeterministic(t *testing.T) {
 func newSceneOrFatal(t *testing.T, seed uint64) *battleScene {
 	t.Helper()
 
-	scene, err := newBattleScene(seed)
+	face, err := uifont.New()
+	if err != nil {
+		t.Fatalf("uifont.New()に失敗: %v", err)
+	}
+	scene, err := newBattleScene(seed, face)
 	if err != nil {
 		t.Fatalf("newBattleScene(%d)に失敗: %v", seed, err)
 	}

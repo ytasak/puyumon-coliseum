@@ -13,36 +13,98 @@ import (
 const (
 	// fieldBottom は盤面の下端。ここまでにキャラクターと両者の状態を描く。
 	fieldBottom = 216
-
-	// messageTop, messageBottom は対戦の経過を出す行の範囲。
-	messageTop    = 220
-	messageBottom = 258
 )
 
-// コマンドのボタンの並び。3列2段の6枠を、画面ごとに使い分ける。
+// 画面下部は1つの窓として扱う。
+//
+// **独立したボタンを並べない。** 窓の内側を細線で仕切って選択肢にする。
+// 文言と選択肢が別々の箱に見えると、初代の画面から離れる。
 const (
-	commandCols   = 3
-	commandRows   = 2
-	commandCells  = commandCols * commandRows
-	commandMargin = 20
-	commandGap    = 12
-	commandTop    = 266
-	commandHeight = 36
+	commandMargin = 8
 
-	cellWidth = (LogicalWidth - commandMargin*2 - commandGap*(commandCols-1)) / commandCols
+	bottomTop    = 220
+	bottomBottom = 352
+
+	// bottomPadding は窓の枠から内側の余白。枠(3px) + 内線(2px) + 3px。
+	bottomPadding = windowBorder + windowInset + 3
+
+	// rootMenuWidth は通常選択時に右へ置く小窓の幅。
+	rootMenuWidth = 236
+
+	// bottomPromptHeight は選択肢の上へ残す案内文1行ぶんの高さ。
+	bottomPromptHeight = 26
 )
 
-// commandRects は6枠の位置。左上から右へ、次の段へと並ぶ。
-var commandRects = func() [commandCells]image.Rectangle {
-	var rects [commandCells]image.Rectangle
-	for i := range rects {
-		col, row := i%commandCols, i/commandCols
-		x := commandMargin + col*(cellWidth+commandGap)
-		y := commandTop + row*(commandHeight+commandGap)
-		rects[i] = image.Rect(x, y, x+cellWidth, y+commandHeight)
+// bottomWindow は下段の窓。文言も選択肢もこの中に入る。
+var bottomWindow = image.Rect(commandMargin, bottomTop, LogicalWidth-commandMargin, bottomBottom)
+
+// bottomInner は窓の内側で、文字と選択肢を置ける範囲。
+var bottomInner = bottomWindow.Inset(bottomPadding)
+
+// listArea は lead・交代先を並べる範囲。上に案内文の1行を残す。
+//
+// 技の選択は4つの技名そのものが案内になるので、内側を丸ごと使う。
+// 誰を出すかを選ぶ場面は、何を選んでいるのかを文で言わないと分からない。
+var listArea = image.Rect(bottomInner.Min.X, bottomInner.Min.Y+bottomPromptHeight,
+	bottomInner.Max.X, bottomInner.Max.Y)
+
+// メッセージ行の範囲。cue再生中は窓の全幅を使う。
+var (
+	messageTop    = bottomInner.Min.Y
+	messageBottom = bottomInner.Max.Y
+)
+
+// commandGrid は下段の内側を cols x rows に分けたときの、index番目の枠を返す。
+//
+// **描画と当たり判定はこの1か所から作る。** 別々に計算すると、見えている
+// ものと押せるものがずれる。
+func commandGrid(area image.Rectangle, cols, rows, index int) image.Rectangle {
+	if cols <= 0 || rows <= 0 || index < 0 || index >= cols*rows {
+		return image.Rectangle{}
 	}
-	return rects
-}()
+	cw, ch := area.Dx()/cols, area.Dy()/rows
+	col, row := index%cols, index/cols
+	x, y := area.Min.X+col*cw, area.Min.Y+row*ch
+	return image.Rect(x, y, x+cw, y+ch)
+}
+
+// moveCellWidth は技の枠1つの幅。ラベルが収まるかの判断に使う。
+func moveCellWidth() int {
+	return commandGrid(bottomInner, moveCols, moveRows, 0).Dx()
+}
+
+// rootMenu は通常選択時に右へ出す小窓。左は対戦文言に残す。
+func rootMenu() image.Rectangle {
+	return image.Rect(bottomInner.Max.X-rootMenuWidth, bottomInner.Min.Y,
+		bottomInner.Max.X, bottomInner.Max.Y)
+}
+
+// messageArea は文言を出せる範囲を返す。
+//
+// 選択肢が右の小窓に出ているあいだは、そこへ食い込まない幅にする。
+func messageArea(withRootMenu bool) image.Rectangle {
+	area := bottomInner
+	if withRootMenu {
+		area.Max.X = rootMenu().Min.X - 8
+	}
+	return area
+}
+
+// 下段の枠の割り方。
+//
+// どれも1枠が現行の192x36より広い。雰囲気のためにタップ領域を小さくしない。
+const (
+	// moveCols, moveRows は技の選択。4技 + わるあがき + もどる が収まる。
+	moveCols = 2
+	moveRows = 3
+
+	// listCols, listRows は lead・交代先・新しい対戦。
+	listCols = 3
+	listRows = 2
+
+	// rootRows は通常選択時の右の小窓。たたかう / こうたい の2つ。
+	rootRows = 2
+)
 
 // menuState はコマンドのどの階層を開いているか。
 type menuState int
@@ -75,8 +137,13 @@ const (
 // **描画と当たり判定はこの1か所から作る。** 別々に持つと、見えているものと
 // 押せるものがずれる。
 type button struct {
-	cell     int
-	label    string
+	// box は描画にも当たり判定にも使う枠。
+	box image.Rectangle
+
+	// label は左へ出す文字。detail は右へ出す補助情報（タイプと残りPP）。
+	label  string
+	detail string
+
 	disabled bool
 	action   buttonAction
 	command  command
@@ -84,7 +151,7 @@ type button struct {
 
 // rect はボタンの位置を返す。
 func (b button) rect() image.Rectangle {
-	return commandRects[b.cell]
+	return b.box
 }
 
 // buttons はいま画面に出すボタンを返す。
@@ -116,7 +183,11 @@ func (s *battleScene) buttons() []button {
 		if !commands.NewMatch {
 			return nil
 		}
-		return []button{{cell: 0, label: "もう一度", command: command{kind: commandNewMatch}}}
+		return []button{{
+			box:     commandGrid(listArea, listCols, listRows, 0),
+			label:   "もう一度",
+			command: command{kind: commandNewMatch},
+		}}
 
 	default:
 		// 相手待ち。押せるものは無い。
@@ -129,7 +200,7 @@ func leadButtons(options []battleui.TeamOption) []button {
 	buttons := make([]button, 0, len(options))
 	for i, option := range options {
 		buttons = append(buttons, button{
-			cell:    i,
+			box:     commandGrid(listArea, listCols, listRows, i),
 			label:   speciesName(option.Species),
 			command: command{kind: commandLead, index: option.Index},
 		})
@@ -139,35 +210,43 @@ func leadButtons(options []battleui.TeamOption) []button {
 
 // rootButtons はFightとSwitchを並べる。
 func rootButtons(commands battleui.Commands) []button {
-	buttons := []button{{cell: 0, label: "たたかう", action: actionOpenFight}}
-	buttons = append(buttons, button{
-		cell:     1,
-		label:    "こうたい",
-		disabled: len(commands.Switches) == 0,
-		action:   actionOpenSwitch,
-	})
-	return buttons
+	menu := rootMenu()
+	return []button{
+		{box: commandGrid(menu, 1, rootRows, 0), label: "たたかう", action: actionOpenFight},
+		{
+			box:      commandGrid(menu, 1, rootRows, 1),
+			label:    "こうたい",
+			disabled: len(commands.Switches) == 0,
+			action:   actionOpenSwitch,
+		},
+	}
 }
 
 // fightButtons は4つの技と、Struggleと、戻るを並べる。
 func fightButtons(commands battleui.Commands) []button {
-	buttons := make([]button, 0, commandCells)
+	buttons := make([]button, 0, moveCols*moveRows)
 	for slot, move := range commands.Moves {
 		buttons = append(buttons, button{
-			cell:     slot,
-			label:    moveLabel(move),
+			box:      commandGrid(bottomInner, moveCols, moveRows, slot),
+			label:    moveName(move.Move),
+			detail:   moveDetail(move),
 			disabled: move.Disabled,
 			command:  command{kind: commandMove, index: slot},
 		})
 	}
 	if commands.Struggle {
 		buttons = append(buttons, button{
-			cell:    commandCells - 2,
+			box:     commandGrid(bottomInner, moveCols, moveRows, len(commands.Moves)),
 			label:   "わるあがき",
 			command: command{kind: commandStruggle},
 		})
 	}
-	return append(buttons, backButton())
+	// もどるは最後の枠。技が4つでも わるあがき が出ても、位置が動かない。
+	return append(buttons, button{
+		box:    commandGrid(bottomInner, moveCols, moveRows, moveCols*moveRows-1),
+		label:  "もどる",
+		action: actionBack,
+	})
 }
 
 // switchButtons は交代先を並べる。
@@ -175,7 +254,7 @@ func switchButtons(options []battleui.TeamOption) []button {
 	buttons := make([]button, 0, len(options))
 	for i, option := range options {
 		buttons = append(buttons, button{
-			cell:    i,
+			box:     commandGrid(listArea, listCols, listRows, i),
 			label:   speciesName(option.Species),
 			command: command{kind: commandSwitch, index: option.Index},
 		})
@@ -185,7 +264,34 @@ func switchButtons(options []battleui.TeamOption) []button {
 
 // backButton は1つ上の階層へ戻るボタン。いつも右下に置く。
 func backButton() button {
-	return button{cell: commandCells - 1, label: "もどる", action: actionBack}
+	return button{
+		box:    commandGrid(listArea, listCols, listRows, listCols*listRows-1),
+		label:  "もどる",
+		action: actionBack,
+	}
+}
+
+// showsRootMenu は右の小窓（たたかう / こうたい）を出す場面かを返す。
+func (s *battleScene) showsRootMenu() bool {
+	if s.busy() {
+		return false
+	}
+	return s.view.Commands.Kind == battleui.CommandChooseAction && s.menu == menuRoot
+}
+
+// showsList は誰を出すかを選ぶ場面かを返す。案内文の1行を残す。
+func (s *battleScene) showsList() bool {
+	if s.busy() {
+		return false
+	}
+	switch s.view.Commands.Kind {
+	case battleui.CommandChooseLead, battleui.CommandChooseReplacement, battleui.CommandFinished:
+		return true
+	case battleui.CommandChooseAction:
+		return s.menu == menuSwitch
+	default:
+		return false
+	}
 }
 
 // visibleButtons は画面に出すボタンを返す。
@@ -233,24 +339,20 @@ func (s *battleScene) tap(p image.Point) (bool, error) {
 	return false, nil
 }
 
-// moveLabel は技のボタンに出す文字列。
+// moveDetail は技の枠の右へ出すタイプと残りPPを返す。
 //
-// 技名・タイプ・残りPPを1行に収める。タイプは定義から引くだけで、
-// 相性の判断はしない。
-//
-// 幅はcellWidth 192pxしかない。全角4文字の技名とタイプ、半角5桁のPPで
-// ほぼ使い切るので、表示名を長くすると枠からはみ出す（jptext.goを参照）。
-func moveLabel(move battleui.MoveView) string {
+// 技名は左、これは右へ出す。名前の長さが変わっても右端が揃う。
+// タイプは定義から引くだけで、相性の判断はしない。
+func moveDetail(move battleui.MoveView) string {
 	if move.Move == "" {
-		return "-"
+		return ""
 	}
 
-	name := moveName(move.Move)
-	label := fmt.Sprintf("%s %d/%d", name, move.PP, move.MaxPP)
+	detail := fmt.Sprintf("%d/%d", move.PP, move.MaxPP)
 	if definition, err := roster.Data().LookupMove(move.Move); err == nil {
-		label = fmt.Sprintf("%s %s %d/%d", name, typeName(definition.Type), move.PP, move.MaxPP)
+		detail = fmt.Sprintf("%s %s", typeName(definition.Type), detail)
 	}
-	return label
+	return detail
 }
 
 // 盤面の配置（論理座標）。手前を大きく、奥を小さくして向きを分かるようにする。

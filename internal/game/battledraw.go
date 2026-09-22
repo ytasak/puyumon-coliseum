@@ -51,8 +51,7 @@ func (s *battleScene) draw(screen *ebiten.Image, sprites *sprite.Renderer) {
 		s.drawInfo(screen, side)
 	}
 
-	s.drawMessage(screen)
-	s.drawCommands(screen)
+	s.drawBottom(screen)
 }
 
 // drawActive は場に出ている1体を描く。
@@ -180,25 +179,72 @@ func (s *battleScene) drawReserves(screen *ebiten.Image, side battle.Side, panel
 	}
 }
 
-// drawMessage は対戦の経過を1行で出す。
-func (s *battleScene) drawMessage(screen *ebiten.Image) {
-	box := image.Rect(commandMargin, messageTop, LogicalWidth-commandMargin, messageBottom)
-	drawWindow(screen, box)
-	drawText(screen, s.face, s.message, box.Min.X+12, box.Min.Y+(box.Dy()-uifont.Size)/2)
+// drawBottom は画面下部の窓と、その中の文言・選択肢を描く。
+//
+// **文言と選択肢を1つの窓へ入れる。** 別々の箱に見えると初代の画面から離れる。
+func (s *battleScene) drawBottom(screen *ebiten.Image) {
+	drawWindow(screen, bottomWindow)
+
+	buttons := s.visibleButtons()
+	root := s.showsRootMenu()
+
+	if area, ok := s.messageBox(); ok {
+		drawText(screen, s.face, s.message, area.Min.X+4, area.Min.Y+4)
+	}
+	if root {
+		drawWindow(screen, rootMenu())
+	}
+	for _, b := range buttons {
+		s.drawCommand(screen, b)
+	}
 }
 
-// drawCommands は選択肢を描く。
-func (s *battleScene) drawCommands(screen *ebiten.Image) {
-	for _, b := range s.visibleButtons() {
-		rect := b.rect()
-		drawWindow(screen, rect)
-		drawCenteredText(screen, s.face, b.label, float64(rect.Min.X+rect.Dx()/2), rect.Min.Y+(rect.Dy()-uifont.Size)/2)
+// messageBox は文言を出す範囲を返す。出さない場面ではfalseを返す。
+//
+// cueを消化しているあいだは窓の全幅を使う。長い経過文を選択肢の脇の
+// 狭い幅へ押し込むと切れる。
+func (s *battleScene) messageBox() (image.Rectangle, bool) {
+	if s.message == "" {
+		return image.Rectangle{}, false
+	}
+	if s.busy() {
+		return bottomInner, true
+	}
+	switch {
+	case s.showsRootMenu():
+		return messageArea(true), true
+	case s.showsList():
+		return image.Rect(bottomInner.Min.X, bottomInner.Min.Y, bottomInner.Max.X, listArea.Min.Y), true
+	default:
+		// 技の選択。技名そのものが案内になるので文言は出さない。
+		return image.Rectangle{}, false
+	}
+}
 
-		// **押せないことは斜線で示す。** 4階調では明度を1段落としても
-		// 隣の階調と紛れる。線が入っているかどうかは階調に関係なく分かる。
-		if b.disabled {
-			drawHatch(screen, rect.Inset(windowBorder))
-		}
+// drawCommand は選択肢を1つ描く。
+//
+// 独立したボタンにせず、窓を細線で仕切ったものとして見せる。
+func (s *battleScene) drawCommand(screen *ebiten.Image, b button) {
+	rect := b.rect()
+
+	// 枠線ではなく仕切り線で区切る。右端と下端が窓の縁に接する枠には引かない。
+	if rect.Max.X < bottomInner.Max.X {
+		drawDivider(screen, rect.Max.X-1, rect.Min.Y+4, 1, rect.Dy()-8)
+	}
+	if rect.Max.Y < bottomInner.Max.Y {
+		drawDivider(screen, rect.Min.X+6, rect.Max.Y-1, rect.Dx()-12, 1)
+	}
+
+	top := rect.Min.Y + (rect.Dy()-uifont.Size)/2
+	drawText(screen, s.face, b.label, rect.Min.X+12, top)
+	if b.detail != "" {
+		drawRightText(screen, s.face, b.detail, rect.Max.X-12, top)
+	}
+
+	// **押せないことは斜線で示す。** 4階調では明度を1段落としても
+	// 隣の階調と紛れる。線が入っているかどうかは階調に関係なく分かる。
+	if b.disabled {
+		drawHatch(screen, rect)
 	}
 }
 

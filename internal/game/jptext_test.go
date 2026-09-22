@@ -109,20 +109,21 @@ func TestEveryDisplayNameIsDrawable(t *testing.T) {
 
 // 技ボタンのラベルが枠へ収まる。
 //
-// **技名を長くすると真っ先にここが溢れる。** cellWidthは192pxしかなく、
-// 技名・タイプ・残りPPを1行に並べるとほぼ使い切る。
+// 技名は左、タイプと残りPPは右へ出す。両方が枠へ収まること。
 func TestMoveLabelsFitInTheirButtons(t *testing.T) {
 	t.Parallel()
 
 	face := testFace(t)
-	limit := float64(cellWidth)
+	// 左右に12pxずつの余白を取り、名前と補助情報が重ならないだけの間も見る。
+	limit := float64(moveCellWidth() - 24)
 
 	for id, move := range roster.Data().Moves {
 		// 残りPPは最大値のときが一番長い。
 		view := battleui.MoveView{Move: id, PP: move.MaxPP, MaxPP: move.MaxPP}
-		label := moveLabel(view)
-		if width := textWidth(face, label); width > limit {
-			t.Errorf("技 %q のラベル %q が枠に収まらない（%.0f px > %.0f px）", id, label, width, limit)
+		name, detail := moveName(id), moveDetail(view)
+		width := textWidth(face, name) + textWidth(face, detail)
+		if width > limit {
+			t.Errorf("技 %q の %q と %q が枠に収まらない（%.0f px > %.0f px）", id, name, detail, width, limit)
 		}
 	}
 }
@@ -132,7 +133,7 @@ func TestCommandLabelsFitInTheirButtons(t *testing.T) {
 	t.Parallel()
 
 	face := testFace(t)
-	limit := float64(cellWidth)
+	limit := float64(moveCellWidth())
 
 	labels := []string{"たたかう", "こうたい", "もどる", "もう一度", "わるあがき", "-"}
 	for _, character := range roster.All() {

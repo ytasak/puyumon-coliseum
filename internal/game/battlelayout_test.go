@@ -10,36 +10,73 @@ import (
 	"github.com/ytasak/puyumon-coliseum/internal/uifont"
 )
 
-// ボタンは画面に収まり、重ならない。
-func TestCommandRectsFitOnScreenAndDoNotOverlap(t *testing.T) {
+// minTapWidth, minTapHeight は選択肢1つの最小の大きさ。
+//
+// **雰囲気のためにタップ領域を小さくしない。** 再設計前は192x36だったので、
+// それを下回らないことを固定する。
+const (
+	minTapWidth  = 192
+	minTapHeight = 36
+)
+
+// どの場面でも選択肢は下段の窓に収まり、重ならず、指で押せる大きさがある。
+func TestCommandBoxesFitTheBottomWindowInEveryMenu(t *testing.T) {
 	t.Parallel()
 
-	screen := image.Rect(0, 0, LogicalWidth, LogicalHeight)
-	for i, rect := range commandRects {
-		if !rect.In(screen) {
-			t.Errorf("枠 %d %v が画面からはみ出している", i, rect)
-		}
-		if rect.Min.Y < commandTop {
-			t.Errorf("枠 %d がメッセージ行へかぶっている", i)
-		}
-		for j := i + 1; j < len(commandRects); j++ {
-			if rect.Overlaps(commandRects[j]) {
-				t.Errorf("枠 %d と %d が重なっている", i, j)
+	for _, tc := range []struct {
+		name    string
+		started bool
+		setup   func(t *testing.T, s *battleScene)
+	}{
+		{name: "lead選択"},
+		{name: "通常選択", started: true},
+		{name: "技の選択", started: true, setup: openFight},
+		{name: "交代先の選択", started: true, setup: func(t *testing.T, s *battleScene) { s.menu = menuSwitch }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scene := newSceneOrFatal(t, 1)
+			if tc.started {
+				scene = startedScene(t, 1)
 			}
-		}
+			if tc.setup != nil {
+				tc.setup(t, scene)
+			}
+
+			buttons := scene.buttons()
+			if len(buttons) == 0 {
+				t.Fatal("選択肢が1つも出ていない")
+			}
+			for i, b := range buttons {
+				rect := b.rect()
+				if !rect.In(bottomWindow) {
+					t.Errorf("枠 %d %v が下段の窓 %v からはみ出している", i, rect, bottomWindow)
+				}
+				if rect.Dx() < minTapWidth || rect.Dy() < minTapHeight {
+					t.Errorf("枠 %d が %dx%d で、%dx%d を下回る", i, rect.Dx(), rect.Dy(), minTapWidth, minTapHeight)
+				}
+				for j := i + 1; j < len(buttons); j++ {
+					if rect.Overlaps(buttons[j].rect()) {
+						t.Errorf("枠 %d と %d が重なっている", i, j)
+					}
+				}
+			}
+		})
 	}
 }
 
-// 盤面・メッセージ・コマンドが上から順に並び、重ならない。
+// 盤面と下段の窓が重ならず、画面に収まる。
 func TestScreenBandsAreOrdered(t *testing.T) {
 	t.Parallel()
 
-	if !(fieldBottom < messageTop && messageTop < messageBottom && messageBottom < commandTop) {
-		t.Errorf("帯の順序が壊れている: field %d / message %d-%d / command %d",
-			fieldBottom, messageTop, messageBottom, commandTop)
+	if fieldBottom >= bottomWindow.Min.Y {
+		t.Errorf("盤面の下端 %d が下段の窓 %v へかぶる", fieldBottom, bottomWindow)
 	}
-	if commandRects[len(commandRects)-1].Max.Y > LogicalHeight {
-		t.Error("コマンドが画面の下からはみ出している")
+	if bottomWindow.Max.Y > LogicalHeight {
+		t.Errorf("下段の窓 %v が画面の下からはみ出している", bottomWindow)
+	}
+	if !bottomInner.In(bottomWindow) || !listArea.In(bottomInner) {
+		t.Errorf("内側の範囲が窓に収まっていない: window %v / inner %v / list %v",
+			bottomWindow, bottomInner, listArea)
 	}
 }
 
@@ -53,12 +90,12 @@ func TestLeadButtonsOfferEveryDealtPokemon(t *testing.T) {
 	if len(buttons) != 3 {
 		t.Fatalf("ボタンが %d 個（3個のはず）", len(buttons))
 	}
-	cells := map[int]bool{}
+	boxes := map[image.Rectangle]bool{}
 	for _, b := range buttons {
-		if cells[b.cell] {
-			t.Errorf("枠 %d が重複している", b.cell)
+		if boxes[b.rect()] {
+			t.Errorf("枠 %v が重複している", b.rect())
 		}
-		cells[b.cell] = true
+		boxes[b.rect()] = true
 		if b.label == "" {
 			t.Error("ラベルが空")
 		}
@@ -252,8 +289,8 @@ func TestButtonLabelsAreDrawableAndFit(t *testing.T) {
 		if missing := uifont.MissingGlyphs(face, label); len(missing) > 0 {
 			t.Errorf("%q は同梱フォントに字形が無い文字を含む: %q", label, missing)
 		}
-		if width := textWidth(face, label); width > float64(cellWidth) {
-			t.Errorf("%q が枠に収まらない（%.0f px > %d px）", label, width, cellWidth)
+		if width := textWidth(face, label); width > float64(moveCellWidth()) {
+			t.Errorf("%q が枠に収まらない（%.0f px > %d px）", label, width, moveCellWidth())
 		}
 	}
 }

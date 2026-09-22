@@ -91,19 +91,13 @@ func TestInfoRowsFitInThePanel(t *testing.T) {
 func TestPanelsDoNotOverlapTheCommandArea(t *testing.T) {
 	t.Parallel()
 
-	message := image.Rect(commandMargin, messageTop, LogicalWidth-commandMargin, messageBottom)
 	for _, side := range battleSides {
 		panel := infoPanels[side]
 		if !panel.In(image.Rect(0, 0, LogicalWidth, LogicalHeight)) {
 			t.Errorf("%v: 情報枠 %v が画面からはみ出す", side, panel)
 		}
-		if panel.Overlaps(message) {
-			t.Errorf("%v: 情報枠 %v がメッセージ枠 %v に重なる", side, panel, message)
-		}
-		for _, rect := range commandRects {
-			if panel.Overlaps(rect) {
-				t.Errorf("%v: 情報枠 %v がコマンド枠 %v に重なる", side, panel, rect)
-			}
+		if panel.Overlaps(bottomWindow) {
+			t.Errorf("%v: 情報枠 %v が下段の窓 %v に重なる", side, panel, bottomWindow)
 		}
 	}
 

@@ -256,15 +256,21 @@ func moveLabel(move battleui.MoveView) string {
 // 盤面の配置（論理座標）。手前を大きく、奥を小さくして向きを分かるようにする。
 var (
 	spriteAnchors = [2]sprite.Transform{
-		viewer: {X: 172, Y: 156, Scale: 92},
-		foe:    {X: 472, Y: 78, Scale: 70},
+		viewer: {X: 150, Y: 158, Scale: 104},
+		foe:    {X: 516, Y: 84, Scale: 72},
 	}
 
 	// infoPanels は名前・Level・HP・状態・控えを出す枠。
+	//
+	// 高さは中の4段（名前 / HPバー / 数値・状態 / 控え）が収まるように取る。
+	// 控えの枠は18pxあるので、infoChipTop + 18 が枠の高さを超えないこと。
 	infoPanels = [2]image.Rectangle{
-		viewer: image.Rect(332, 118, 624, 200),
-		foe:    image.Rect(16, 16, 308, 98),
+		viewer: image.Rect(348, 118, 624, 206),
+		foe:    image.Rect(16, 14, 292, 102),
 	}
+
+	// groundLine は奥と手前を分ける地面の線。対面の奥行きを出す。
+	groundLine = image.Rect(0, 138, LogicalWidth, 140)
 )
 
 const (

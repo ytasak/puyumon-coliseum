@@ -9,7 +9,6 @@ package game
 import (
 	"fmt"
 	"image"
-	"image/color"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	text "github.com/hajimehoshi/ebiten/v2/text/v2"
@@ -23,8 +22,8 @@ import (
 // OSが描画するためマルチバイト文字を使用できる。
 const WindowTitle = "ぷゆもんコロシアム 155 Battle"
 
-// backgroundColor は盤面の背景。
-var backgroundColor = color.RGBA{R: 0x1b, G: 0x24, B: 0x38, A: 0xff}
+// backgroundColor は盤面の背景。4階調のうち最も明るい階調。
+var backgroundColor = toneLightest
 
 // Game は ebiten.Game の実装。
 //

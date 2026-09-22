@@ -3,9 +3,9 @@ package game
 import (
 	"fmt"
 	"image"
-	"image/color"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	text "github.com/hajimehoshi/ebiten/v2/text/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
 	"github.com/ytasak/puyumon-coliseum/internal/battle"
@@ -14,30 +14,14 @@ import (
 	"github.com/ytasak/puyumon-coliseum/internal/uifont"
 )
 
-// 画面の色。背景と紛れず、押せるものと押せないものが見分けられる組み合わせにする。
-var (
-	panelFillColor   = color.RGBA{R: 0x22, G: 0x2d, B: 0x42, A: 0xff}
-	panelBorderColor = color.RGBA{R: 0x4a, G: 0x5c, B: 0x7a, A: 0xff}
-
-	buttonFillColor     = color.RGBA{R: 0x2c, G: 0x3a, B: 0x52, A: 0xff}
-	buttonBorderColor   = color.RGBA{R: 0x5a, G: 0x6e, B: 0x90, A: 0xff}
-	buttonDisabledColor = color.RGBA{R: 0x16, G: 0x1d, B: 0x2b, A: 0xff}
-
-	// disabledVeilColor は押せない枠へかける半透明。文字ごと沈ませる。
-	disabledVeilColor = color.RGBA{R: 0x1b, G: 0x24, B: 0x38, A: 0xb0}
-
-	hpTrackColor = color.RGBA{R: 0x14, G: 0x1b, B: 0x28, A: 0xff}
-	hpHighColor  = color.RGBA{R: 0x4a, G: 0xd0, B: 0x6a, A: 0xff}
-	hpMidColor   = color.RGBA{R: 0xf0, G: 0xc0, B: 0x40, A: 0xff}
-	hpLowColor   = color.RGBA{R: 0xe8, G: 0x5a, B: 0x4a, A: 0xff}
-)
-
 // HPバーの形（論理座標）。
 const (
 	hpBarHeight = 8
-	hpBarInset  = 10
+	hpBarInset  = 12
 
-	// hpMidPercent, hpLowPercent は色が変わる残量。
+	// hpMidPercent, hpLowPercent は縞の細かさが変わる残量。
+	//
+	// 4階調では色で危険度を示せないので、塗りの密度で示す。
 	hpMidPercent = 50
 	hpLowPercent = 20
 
@@ -52,6 +36,10 @@ const (
 
 // draw は対戦画面を描く。状態は変えない。
 func (s *battleScene) draw(screen *ebiten.Image, sprites *sprite.Renderer) {
+	// 地面の線。奥（相手）と手前（自分）を分けて対面の奥行きを出す。
+	vector.DrawFilledRect(screen, float32(groundLine.Min.X), float32(groundLine.Min.Y),
+		float32(groundLine.Dx()), float32(groundLine.Dy()), toneLight, false)
+
 	for _, side := range battleSides {
 		s.drawActive(screen, sprites, side)
 	}
@@ -98,15 +86,32 @@ func (s *battleScene) activeSprite(side battle.Side) (int, bool) {
 	return index, true
 }
 
+// 情報枠の中の段（枠の上端からの位置）。
+//
+// **段のyをここで一度に決める。** 描く場所ごとに足し算していくと、名前が長い
+// ときや状態が付いたときに段どうしが重なる。
+const (
+	infoNameTop   = 8
+	infoBarTop    = 34
+	infoNumberTop = 46
+	infoChipTop   = 66
+)
+
 // drawInfo は名前・Level・HP・状態・控えを枠に描く。
+//
+// HPの数値は**両sideに出す**。相手の残りHPは対戦中ずっと公開されている情報で、
+// 見た目を変えるついでに減らさない。
 func (s *battleScene) drawInfo(screen *ebiten.Image, side battle.Side) {
 	panel := infoPanels[side]
-	drawPanel(screen, panel, panelFillColor, panelBorderColor)
+	drawWindow(screen, panel)
+
+	left := panel.Min.X + hpBarInset
+	right := panel.Max.X - hpBarInset
 
 	index := s.shown.active[side]
 	if !inTeam(index) {
 		// lead選択中。まだ出ていないので控えだけを並べる。
-		drawText(screen, s.face, "準備中", panel.Min.X+hpBarInset, panel.Min.Y+6)
+		drawText(screen, s.face, "準備中", left, panel.Min.Y+infoNameTop)
 		s.drawReserves(screen, side, panel, -1)
 		return
 	}
@@ -116,18 +121,32 @@ func (s *battleScene) drawInfo(screen *ebiten.Image, side battle.Side) {
 		return
 	}
 
-	header := fmt.Sprintf("%s Lv%d", speciesName(pokemon.Species), pokemon.Level)
-	if tag := statusName(s.statusOf(side, index)); tag != "" {
-		header += " " + tag
-	}
-	drawText(screen, s.face, header, panel.Min.X+hpBarInset, panel.Min.Y+6)
+	drawText(screen, s.face, speciesName(pokemon.Species), left, panel.Min.Y+infoNameTop)
+	drawRightText(screen, s.face, fmt.Sprintf("Lv%d", pokemon.Level), right, panel.Min.Y+infoNameTop)
 
 	hp := s.shown.hp[side][index]
-	barTop := panel.Min.Y + 6 + uifont.Size + 4
-	drawHPBar(screen, image.Rect(panel.Min.X+hpBarInset, barTop, panel.Max.X-hpBarInset, barTop+hpBarHeight), hp, pokemon.MaxHP)
-	drawText(screen, s.face, fmt.Sprintf("%d/%d", hp, pokemon.MaxHP), panel.Min.X+hpBarInset, barTop+hpBarHeight+2)
+	drawHPBar(screen, image.Rect(left, panel.Min.Y+infoBarTop, right, panel.Min.Y+infoBarTop+hpBarHeight), hp, pokemon.MaxHP)
+	drawText(screen, s.face, fmt.Sprintf("%d/%d", hp, pokemon.MaxHP), left, panel.Min.Y+infoNumberTop)
+
+	// 状態は数値と同じ段の右端へ。名前の長さに影響されない。
+	if tag := statusName(s.statusOf(side, index)); tag != "" {
+		drawStatusTag(screen, s.face, tag, right, panel.Min.Y+infoNumberTop)
+	}
 
 	s.drawReserves(screen, side, panel, index)
+}
+
+// drawStatusTag は状態を反転したラベルで描く。
+//
+// 文字色だけを変えても4階調では目立たないので、地と文字を入れ替える。
+func drawStatusTag(screen *ebiten.Image, face *text.GoTextFace, tag string, right, top int) {
+	const padding = 6
+
+	width := int(textWidth(face, tag)) + padding*2
+	box := image.Rect(right-width, top, right, top+uifont.Size+2)
+	vector.DrawFilledRect(screen, float32(box.Min.X), float32(box.Min.Y),
+		float32(box.Dx()), float32(box.Dy()), toneDarkest, false)
+	drawTextWithColor(screen, face, tag, box.Min.X+padding, top, toneLightest)
 }
 
 // drawReserves は控えの簡易状態を右下へ並べる。
@@ -146,12 +165,16 @@ func (s *battleScene) drawReserves(screen *ebiten.Image, side battle.Side, panel
 		}
 
 		box := image.Rect(x, y, x+reserveChipSize, y+reserveChipSize)
-		fill := buttonFillColor
-		if s.shown.fainted[side][index] {
-			fill = buttonDisabledColor
-		}
-		drawPanel(screen, box, fill, panelBorderColor)
+		vector.DrawFilledRect(screen, float32(box.Min.X), float32(box.Min.Y),
+			float32(box.Dx()), float32(box.Dy()), toneDarkest, false)
+		vector.DrawFilledRect(screen, float32(box.Min.X+1), float32(box.Min.Y+1),
+			float32(box.Dx()-2), float32(box.Dy()-2), toneLightest, false)
 		drawTextInBox(screen, s.face, shortLabel(pokemon.Species), box)
+
+		// **ひんしは×で示す。** 明度を落とすだけだと状態異常の表示と紛れる。
+		if s.shown.fainted[side][index] {
+			drawChipCross(screen, box)
+		}
 
 		x -= reserveChipSize + reserveChipGap
 	}
@@ -160,26 +183,21 @@ func (s *battleScene) drawReserves(screen *ebiten.Image, side battle.Side, panel
 // drawMessage は対戦の経過を1行で出す。
 func (s *battleScene) drawMessage(screen *ebiten.Image) {
 	box := image.Rect(commandMargin, messageTop, LogicalWidth-commandMargin, messageBottom)
-	drawPanel(screen, box, panelFillColor, panelBorderColor)
-	drawText(screen, s.face, s.message, box.Min.X+10, box.Min.Y+(box.Dy()-uifont.Size)/2)
+	drawWindow(screen, box)
+	drawText(screen, s.face, s.message, box.Min.X+12, box.Min.Y+(box.Dy()-uifont.Size)/2)
 }
 
 // drawCommands は選択肢を描く。
 func (s *battleScene) drawCommands(screen *ebiten.Image) {
 	for _, b := range s.visibleButtons() {
 		rect := b.rect()
-		fill := buttonFillColor
-		if b.disabled {
-			fill = buttonDisabledColor
-		}
-		drawPanel(screen, rect, fill, buttonBorderColor)
+		drawWindow(screen, rect)
 		drawCenteredText(screen, s.face, b.label, float64(rect.Min.X+rect.Dx()/2), rect.Min.Y+(rect.Dy()-uifont.Size)/2)
 
+		// **押せないことは斜線で示す。** 4階調では明度を1段落としても
+		// 隣の階調と紛れる。線が入っているかどうかは階調に関係なく分かる。
 		if b.disabled {
-			// 文字の上から半透明をかけて枠ごと沈ませる。枠の色だけでは
-			// 押せないことが分かりにくかった。文字色だけを変えるより、
-			// 枠と文字がまとめて暗くなるほうが押せないと伝わる。
-			dimPanel(screen, rect)
+			drawHatch(screen, rect.Inset(windowBorder))
 		}
 	}
 }
@@ -244,45 +262,34 @@ func shortLabel(species battle.SpeciesID) string {
 	return ""
 }
 
-// drawPanel は枠を塗って縁を描く。
-func drawPanel(screen *ebiten.Image, rect image.Rectangle, fill, border color.Color) {
-	x, y := float32(rect.Min.X), float32(rect.Min.Y)
-	w, h := float32(rect.Dx()), float32(rect.Dy())
-
-	vector.DrawFilledRect(screen, x, y, w, h, fill, false)
-	vector.StrokeRect(screen, x, y, w, h, 1, border, false)
-}
-
-// dimPanel は枠の上に半透明をかけて沈ませる。
-func dimPanel(screen *ebiten.Image, rect image.Rectangle) {
-	vector.DrawFilledRect(screen,
-		float32(rect.Min.X), float32(rect.Min.Y), float32(rect.Dx()), float32(rect.Dy()),
-		disabledVeilColor, false)
-}
-
-// drawHPBar は残量に応じて色の変わるHPバーを描く。
+// drawHPBar は残量を塗りの長さと縞の細かさで示す。
+//
+// **色は変えない。** 4階調では残量ごとに色相を割り当てられないので、危ないほど
+// 縞を細かくする。塗りの長さだけでも読めるが、少なくなったことに気づきやすくする。
 func drawHPBar(screen *ebiten.Image, rect image.Rectangle, hp, maxHP int) {
 	x, y := float32(rect.Min.X), float32(rect.Min.Y)
 	w, h := float32(rect.Dx()), float32(rect.Dy())
-	vector.DrawFilledRect(screen, x, y, w, h, hpTrackColor, false)
 
+	vector.DrawFilledRect(screen, x-1, y-1, w+2, h+2, toneDarkest, false)
+	vector.DrawFilledRect(screen, x, y, w, h, toneLightest, false)
 	if maxHP <= 0 || hp <= 0 {
-		vector.StrokeRect(screen, x, y, w, h, 1, panelBorderColor, false)
 		return
 	}
 
-	percent := hp * 100 / maxHP
-	fill := hpHighColor
-	switch {
-	case percent <= hpLowPercent:
-		fill = hpLowColor
-	case percent <= hpMidPercent:
-		fill = hpMidColor
+	filled := int(float32(rect.Dx()) * float32(hp) / float32(maxHP))
+	if filled <= 0 {
+		return
 	}
+	bar := image.Rect(rect.Min.X, rect.Min.Y, rect.Min.X+filled, rect.Max.Y)
+	vector.DrawFilledRect(screen, float32(bar.Min.X), float32(bar.Min.Y),
+		float32(bar.Dx()), float32(bar.Dy()), toneDark, false)
 
-	filled := w * float32(hp) / float32(maxHP)
-	vector.DrawFilledRect(screen, x, y, filled, h, fill, false)
-	vector.StrokeRect(screen, x, y, w, h, 1, panelBorderColor, false)
+	switch percent := hp * 100 / maxHP; {
+	case percent <= hpLowPercent:
+		drawStripes(screen, bar, 4)
+	case percent <= hpMidPercent:
+		drawStripes(screen, bar, 8)
+	}
 }
 
 // faintParticle は倒れたときに出すEmoji。

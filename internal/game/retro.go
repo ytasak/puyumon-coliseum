@@ -1,6 +1,8 @@
 package game
 
 import (
+	_ "embed"
+	"fmt"
 	"image"
 	"image/color"
 
@@ -101,4 +103,35 @@ func drawChipCross(dst *ebiten.Image, box image.Rectangle) {
 	x1, y1 := float32(box.Max.X-inset), float32(box.Max.Y-inset)
 	vector.StrokeLine(dst, x0, y0, x1, y1, 2, toneDarkest, false)
 	vector.StrokeLine(dst, x1, y0, x0, y1, 2, toneDarkest, false)
+}
+
+// posterizeSrc は描いたものを4階調へ丸めるshader。
+//
+//go:embed posterize.kage
+var posterizeSrc []byte
+
+// newPosterizeShader は4階調化のshaderを組み立てる。
+//
+// **描画contextを必要としないので、ゲームループの外から呼べる。**
+func newPosterizeShader() (*ebiten.Shader, error) {
+	shader, err := ebiten.NewShader(posterizeSrc)
+	if err != nil {
+		return nil, fmt.Errorf("game: compile posterize shader: %w", err)
+	}
+	return shader, nil
+}
+
+// toneUniforms はshaderへ渡す4階調を返す。
+//
+// 色の定義はGo側の1か所に置き、shaderは受け取った値を使うだけにする。
+func toneUniforms() map[string]any {
+	asVec := func(c color.RGBA) []float32 {
+		return []float32{float32(c.R) / 0xff, float32(c.G) / 0xff, float32(c.B) / 0xff, 1}
+	}
+	return map[string]any{
+		"Tone0": asVec(toneLightest),
+		"Tone1": asVec(toneLight),
+		"Tone2": asVec(toneDark),
+		"Tone3": asVec(toneDarkest),
+	}
 }

@@ -3,6 +3,7 @@ package game
 import (
 	"fmt"
 
+	"github.com/hajimehoshi/ebiten/v2"
 	text "github.com/hajimehoshi/ebiten/v2/text/v2"
 
 	"github.com/ytasak/puyumon-coliseum/internal/anim"
@@ -91,6 +92,13 @@ type battleScene struct {
 	// face は画面テキストを描く同梱フォント。Gameと同じものを使い回す。
 	face *text.GoTextFace
 
+	// posterize はキャラクターとparticleを4階調へ丸めるshader。
+	posterize *ebiten.Shader
+
+	// field はキャラクターとparticleを一度描く先。4階調へ丸めてから画面へ移す。
+	// 描画contextが要るので、最初のDrawまで作らない。
+	field *ebiten.Image
+
 	// view は直近のSnapshot。cueを消化しているあいだは更新しない。
 	view battleui.View
 
@@ -124,11 +132,17 @@ func newBattleScene(seed uint64, face *text.GoTextFace) (*battleScene, error) {
 		return nil, fmt.Errorf("game: %w", err)
 	}
 
+	posterize, err := newPosterizeShader()
+	if err != nil {
+		return nil, err
+	}
+
 	scene := &battleScene{
-		seed:    seed,
-		session: session,
-		bot:     bot.New(roster.Data(), session.BotSeed()),
-		face:    face,
+		seed:      seed,
+		session:   session,
+		bot:       bot.New(roster.Data(), session.BotSeed()),
+		face:      face,
+		posterize: posterize,
 	}
 	scene.refresh()
 	return scene, nil

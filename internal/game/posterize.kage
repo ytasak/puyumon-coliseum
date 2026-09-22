@@ -1,0 +1,39 @@
+//kage:unit pixels
+
+package main
+
+// 描いたものを4階調へ丸めるshader。
+//
+// Composite EmojiはフルカラーなのでUIの4階調から浮く。輪郭とシルエットを
+// 残したまま明るさだけで段へ割り当て、画面全体を同じ階調に揃える。
+//
+// 階調はuniformで受け取る。色の定義をGo側の1か所に置いておきたいため。
+
+var Tone0 vec4 // 最明
+var Tone1 vec4
+var Tone2 vec4
+var Tone3 vec4 // 最暗
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	src := imageSrc0At(srcPos)
+	if src.a == 0 {
+		return vec4(0)
+	}
+
+	// premultiplied alphaなので、明るさを測る前に戻す。
+	rgb := src.rgb / src.a
+	lum := dot(rgb, vec3(0.299, 0.587, 0.114))
+
+	// 明るいほど明るい階調へ。境目は4等分。
+	tone := Tone3
+	if lum >= 0.75 {
+		tone = Tone0
+	} else if lum >= 0.5 {
+		tone = Tone1
+	} else if lum >= 0.25 {
+		tone = Tone2
+	}
+
+	// 元のalphaを保ったまま返す。輪郭の滑らかさはそのまま残る。
+	return vec4(tone.rgb*src.a, src.a) * color
+}

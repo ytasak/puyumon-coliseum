@@ -40,18 +40,41 @@ func (s *battleScene) draw(screen *ebiten.Image, sprites *sprite.Renderer) {
 	vector.DrawFilledRect(screen, float32(groundLine.Min.X), float32(groundLine.Min.Y),
 		float32(groundLine.Dx()), float32(groundLine.Dy()), toneLight, false)
 
-	for _, side := range battleSides {
-		s.drawActive(screen, sprites, side)
-	}
-	for i := range s.particles.Len() {
-		character, transform := s.particles.At(i)
-		sprites.Draw(screen, character, transform)
-	}
+	s.drawField(screen, sprites)
+
 	for _, side := range battleSides {
 		s.drawInfo(screen, side)
 	}
 
 	s.drawBottom(screen)
+}
+
+// drawField はキャラクターとparticleを4階調へ丸めて描く。
+//
+// **一度offscreenへ描いてからshaderで丸める。** Composite EmojiはフルカラーなのでUIの
+// 4階調から浮く。1枚にまとめてから通すことで、キャラクターとparticleが重なった
+// ところも同じ段へ揃う。
+//
+// UIの窓や文字はもともと4階調で描いているので、この経路は通さない。
+func (s *battleScene) drawField(screen *ebiten.Image, sprites *sprite.Renderer) {
+	width, height := screen.Bounds().Dx(), screen.Bounds().Dy()
+	if s.field == nil || s.field.Bounds().Dx() != width || s.field.Bounds().Dy() != height {
+		s.field = ebiten.NewImage(width, height)
+	}
+	s.field.Clear()
+
+	for _, side := range battleSides {
+		s.drawActive(s.field, sprites, side)
+	}
+	for i := range s.particles.Len() {
+		character, transform := s.particles.At(i)
+		sprites.Draw(s.field, character, transform)
+	}
+
+	op := &ebiten.DrawRectShaderOptions{}
+	op.Images[0] = s.field
+	op.Uniforms = toneUniforms()
+	screen.DrawRectShader(width, height, s.posterize, op)
 }
 
 // drawActive は場に出ている1体を描く。
